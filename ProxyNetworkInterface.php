@@ -42,7 +42,7 @@ final class ProxyNetworkInterface implements NetworkInterface
     /** @var NetworkSession[] */
     private array $sessions = [];
 
-    public function __construct(Server $server)
+    public function __construct(Server $server, int $port)
     {
         $this->server = $server;
         $this->notifier = new SleeperNotifier();
@@ -52,7 +52,7 @@ final class ProxyNetworkInterface implements NetworkInterface
 
         $this->proxy = new ProxyServer(
             $server->getIp(),
-            $server->getPort(),
+            $port,
             $server->getLogger(),
             $mainToThreadBuffer,
             $threadToMainBuffer,
