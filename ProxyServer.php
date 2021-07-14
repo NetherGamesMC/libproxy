@@ -195,9 +195,16 @@ class ProxyServer extends Thread
         $read = $this->sockets;
         $read[self::SOCKET_SERVER] = $this->serverSocket;
 
+        $write = null;
+        $except = null;
+
+        /** @phpstan-ignore-next-line */
         $select = socket_select($read, $write, $except, 5);
         if ($select !== false && $select > 0) {
-            foreach (array_keys($read) as $socketId) {
+            /** @var int[] $socketIds */
+            $socketIds = array_keys($read);
+
+            foreach ($socketIds as $socketId) {
                 if ($socketId === self::SOCKET_SERVER) {
                     $this->onServerSocketReceive();
                 } else {
@@ -212,9 +219,7 @@ class ProxyServer extends Thread
         $socket = socket_accept($this->serverSocket);
         if ($socket === false) {
             $this->logger->debug("Couldn't accept new socket request: " . socket_strerror(socket_last_error($this->serverSocket)));
-        }
-
-        if (socket_getpeername($socket, $ip, $port)) {
+        } elseif (socket_getpeername($socket, $ip, $port)) {
             $this->sockets[$socketId = $this->socketId++] = $socket;
 
             $pk = new LoginPacket();

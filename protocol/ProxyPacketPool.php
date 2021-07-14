@@ -15,7 +15,7 @@ class ProxyPacketPool
 {
     /** @var self|null */
     protected static ?ProxyPacketPool $instance = null;
-    /** @var SplFixedArray<Packet> */
+    /** @var SplFixedArray<ProxyPacket> */
     protected SplFixedArray $pool;
 
     public function __construct()
