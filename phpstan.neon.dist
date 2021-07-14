@@ -1,0 +1,15 @@
+parameters:
+    level: max
+    checkMissingIterableValueType: false
+    paths:
+        - .
+    scanDirectories:
+        - NGEssentials/src
+        - phar://PharBuilder/PocketMine-MP.phar
+    excludePaths:
+        analyse:
+            - bin
+            - NGEssentials
+            - PharBuilder
+            - stub
+            - vendor
