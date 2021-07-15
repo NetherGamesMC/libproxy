@@ -79,7 +79,7 @@ class ProxyServer extends Thread
 
     /** @var Socket */
     private Socket $serverSocket;
-    /** @var Socket[]|Volatile */
+    /** @var Socket[] */
     private array $sockets = [];
 
     /** @var int */
