@@ -6,7 +6,6 @@ declare(strict_types=1);
 namespace libproxy\protocol;
 
 
-use pocketmine\network\mcpe\protocol\Packet;
 use pocketmine\utils\Binary;
 use pocketmine\utils\BinaryDataException;
 use SplFixedArray;
