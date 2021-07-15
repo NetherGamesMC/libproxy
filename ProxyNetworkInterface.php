@@ -29,6 +29,7 @@ use RuntimeException;
 use Socket;
 use Threaded;
 use function bin2hex;
+use function socket_close;
 use function socket_create_pair;
 use function socket_write;
 use function strlen;
@@ -222,5 +223,7 @@ final class ProxyNetworkInterface implements NetworkInterface
     {
         $this->server->getTickSleeper()->removeNotifier($this->notifier);
         $this->proxy->quit();
+
+        socket_close($this->threadNotifier);
     }
 }

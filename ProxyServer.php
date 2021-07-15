@@ -5,6 +5,7 @@ declare(strict_types=1);
 
 namespace libproxy;
 
+use ErrorException;
 use libproxy\protocol\DisconnectPacket;
 use libproxy\protocol\ForwardPacket;
 use libproxy\protocol\LoginPacket;
@@ -246,8 +247,7 @@ class ProxyServer extends Thread
                                 if (($socket = $this->getSocket($socketId)) === null) {
                                     throw new PacketHandlingException('Socket with id (' . $socketId . ") doesn't exist.");
                                 } elseif (socket_write($socket, Binary::writeInt(strlen($pk->payload)) . $pk->payload) === false) {
-                                    $this->logger->debug('Socket with id (' . $socketId . ") isn't writable.");
-                                    $this->closeSocket($socketId);
+                                    throw new PacketHandlingException('Socket with id (' . $socketId . ") isn't writable.");
                                 }
                                 break;
                         }
@@ -349,28 +349,36 @@ class ProxyServer extends Thread
 
     private function get(Socket $socket, int $remainingLength): ?string
     {
-        $packet = '';
-        $buffer = '';
+        try {
+            $packet = '';
+            $buffer = '';
 
-        while ($remainingLength > 0) {
-            $length = min(65535, $remainingLength);
-            $receivedLength = socket_recv($socket, $buffer, $length, MSG_WAITALL);
+            while ($remainingLength > 0) {
+                $length = min(65535, $remainingLength);
+                $receivedLength = socket_recv($socket, $buffer, $length, MSG_WAITALL);
 
-            if ($receivedLength === false || $receivedLength !== $length) {
-                return null;
+                if ($receivedLength === false || $receivedLength !== $length) {
+                    return null;
+                }
+
+                $packet .= $buffer;
+                $remainingLength -= $length;
             }
 
-            $packet .= $buffer;
-            $remainingLength -= $length;
+            return $packet;
+        } catch (ErrorException $exception){
+            return null;
         }
-
-        return $packet;
     }
 
     public function waitShutdown(): void
     {
         $this->tickProcessor();
 
+        foreach ($this->sockets as $socket) {
+            socket_close($socket);
+        }
         socket_close($this->serverSocket);
+        socket_close($this->notifySocket);
     }
 }
