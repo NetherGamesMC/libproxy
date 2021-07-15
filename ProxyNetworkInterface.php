@@ -121,7 +121,7 @@ final class ProxyNetworkInterface implements NetworkInterface
 
             if (!$stream->feof()) {
                 $remains = substr($stream->getBuffer(), $stream->getOffset());
-                $this->server->getLogger()->debug('Still ' . strlen($remains) . ' bytes unread in ' . $packet->getName() . ': ' . bin2hex($remains));
+                $this->server->getLogger()->debug('Still ' . strlen($remains) . ' bytes unread in ' . $pk->pid() . ': ' . bin2hex($remains));
             }
 
             try {
