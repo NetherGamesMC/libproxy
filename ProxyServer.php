@@ -23,6 +23,7 @@ use Socket;
 use Threaded;
 use ThreadedLogger;
 use Throwable;
+use Volatile;
 use function array_keys;
 use function error_get_last;
 use function gc_enable;
@@ -41,6 +42,9 @@ use function socket_select;
 use function socket_set_option;
 use function socket_strerror;
 use function socket_write;
+use function strlen;
+use function zstd_compress;
+use function zstd_uncompress;
 use const AF_INET;
 use const MSG_WAITALL;
 use const PTHREADS_INHERIT_NONE;
@@ -74,7 +78,7 @@ class ProxyServer extends Thread
 
     /** @var Socket */
     private Socket $serverSocket;
-    /** @var Socket[] */
+    /** @var Socket[]|Volatile */
     private array $sockets = [];
 
     /** @var int */
@@ -192,7 +196,7 @@ class ProxyServer extends Thread
 
     private function pullSockets(): void
     {
-        $read = $this->sockets;
+        $read = (array)$this->sockets;
         $read[self::SOCKET_SERVER] = $this->serverSocket;
 
         $write = null;
@@ -256,10 +260,12 @@ class ProxyServer extends Thread
             if ($rawFrameData === null) {
                 $this->closeSocket($socketId);
                 $this->logger->debug('Socket(' . $socketId . ') returned invalid frame data: ' . socket_strerror(socket_last_error($this->serverSocket)));
+            } elseif(($payload = zstd_uncompress($rawFrameData)) === false) {
+                $this->closeSocket($socketId);
+                $this->logger->emergency('Socket with id (' . $socketId . ') data could not be decompressed.');
             } else {
-                //todo: decompress frame data;
                 $pk = new ForwardPacket();
-                $pk->payload = $rawFrameData;
+                $pk->payload = $payload;
 
                 $this->putPacket($socketId, $pk);
             }
@@ -268,7 +274,7 @@ class ProxyServer extends Thread
 
     public function getSocket(int $socketId): ?Socket
     {
-        return $this->sockets[$socketId] ?? null;
+        return ((array)$this->sockets)[$socketId] ?? null;
     }
 
     private function get(Socket $socket, int $remainingLength): ?string
@@ -328,9 +334,14 @@ class ProxyServer extends Thread
                                 /** @var ForwardPacket $pk */
                                 if (($socket = $this->getSocket($socketId)) === null) {
                                     throw new PacketHandlingException('Socket with id (' . $socketId . ") doesn't exist.");
-                                } elseif (socket_write($socket, $pk->payload) === false) { //todo: compression
-                                    $this->logger->debug('Socket with id (' . $socketId . ") isn't writable.");
-                                    $this->closeSocket($socketId);
+                                } else {
+                                    $payload = zstd_compress($pk->payload, -1); //FAST ZSTD
+                                    if ($payload === false) {
+                                        $this->logger->emergency('Socket with id (' . $socketId . ') data could not be compressed.');
+                                    } elseif (socket_write($socket, Binary::writeInt(strlen($payload)) . $payload) === false) {
+                                        $this->logger->debug('Socket with id (' . $socketId . ") isn't writable.");
+                                        $this->closeSocket($socketId);
+                                    }
                                 }
                                 break;
                         }
