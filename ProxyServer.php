@@ -23,7 +23,6 @@ use Socket;
 use Threaded;
 use ThreadedLogger;
 use Throwable;
-use Volatile;
 use function array_keys;
 use function error_get_last;
 use function gc_enable;
@@ -37,6 +36,7 @@ use function socket_create;
 use function socket_getpeername;
 use function socket_last_error;
 use function socket_listen;
+use function socket_read;
 use function socket_recv;
 use function socket_select;
 use function socket_set_option;
@@ -56,7 +56,8 @@ use const SOL_TCP;
 
 class ProxyServer extends Thread
 {
-    public const SOCKET_SERVER = 0;
+    public const SERVER_SOCKET = -1;
+    public const NOTIFY_SOCKET = -2;
 
     /** @var string|null */
     public ?string $crashInfo = null;
@@ -79,17 +80,20 @@ class ProxyServer extends Thread
 
     /** @var Socket */
     private Socket $serverSocket;
+    /** @var Socket */
+    private Socket $notifySocket;
     /** @var Socket[] */
     private array $sockets = [];
 
     /** @var int */
-    private int $socketId = 1;
+    private int $socketId = 0;
 
-    public function __construct(string $serverIp, int $serverPort, ThreadedLogger $logger, Threaded $mainToThreadBuffer, Threaded $threadToMainBuffer, SleeperNotifier $notifier, bool $asyncDecompress)
+    public function __construct(string $serverIp, int $serverPort, ThreadedLogger $logger, Threaded $mainToThreadBuffer, Threaded $threadToMainBuffer, SleeperNotifier $notifier, Socket $notifySocket, bool $asyncDecompress)
     {
         $this->serverIp = $serverIp;
         $this->serverPort = $serverPort;
         $this->logger = $logger;
+        $this->notifySocket = $notifySocket;
         $this->asyncDecompress = $asyncDecompress;
 
         $this->mainToThreadReader = new PthreadsChannelReader($mainToThreadBuffer);
@@ -192,14 +196,9 @@ class ProxyServer extends Thread
 
     private function tickProcessor(): void
     {
-        $this->pullSockets();
-        $this->pushSockets();
-    }
-
-    private function pullSockets(): void
-    {
         $read = (array)$this->sockets;
-        $read[self::SOCKET_SERVER] = $this->serverSocket;
+        $read[self::SERVER_SOCKET] = $this->serverSocket;
+        $read[self::NOTIFY_SOCKET] = $this->notifySocket;
 
         $write = null;
         $except = null;
@@ -211,112 +210,15 @@ class ProxyServer extends Thread
             $socketIds = array_keys($read);
 
             foreach ($socketIds as $socketId) {
-                if ($socketId === self::SOCKET_SERVER) {
+                if ($socketId === self::NOTIFY_SOCKET) {
+                    socket_read($this->notifySocket, 65535); //clean socket
+                    $this->pushSockets();
+                } elseif ($socketId === self::SERVER_SOCKET) {
                     $this->onServerSocketReceive();
                 } else {
                     $this->onSocketReceive($socketId);
                 }
             }
-        }
-    }
-
-    private function onServerSocketReceive(): void
-    {
-        $socket = socket_accept($this->serverSocket);
-        if ($socket === false) {
-            $this->logger->debug("Couldn't accept new socket request: " . socket_strerror(socket_last_error($this->serverSocket)));
-        } elseif (socket_getpeername($socket, $ip, $port)) {
-            $this->sockets[$socketId = $this->socketId++] = $socket;
-
-            $pk = new LoginPacket();
-            $pk->ip = $ip;
-            $pk->port = $port;
-
-            $this->putPacket($socketId, $pk);
-        } else {
-            $this->logger->debug('New socket request already disconnected: ' . socket_strerror(socket_last_error($this->serverSocket)));
-        }
-    }
-
-    private function putPacket(int $socketId, ProxyPacket $pk): void
-    {
-        $serializer = new ProxyPacketSerializer();
-
-        $pk->encode($socketId, $serializer);
-
-        $this->threadToMainWriter->write($serializer->getBuffer());
-    }
-
-    private function onSocketReceive(int $socketId): void
-    {
-        /** @var Socket $socket */
-        $socket = $this->getSocket($socketId);
-
-        if (($rawFrameLength = $this->get($socket, 4)) === null) {
-            $this->closeSocket($socketId);
-            $this->logger->debug('Socket(' . $socketId . ') returned invalid frame length: ' . socket_strerror(socket_last_error($this->serverSocket)));
-        } else {
-            $packetLength = Binary::readInt($rawFrameLength);
-            $rawFrameData = $this->get($socket, $packetLength);
-
-            if ($rawFrameData === null) {
-                $this->closeSocket($socketId);
-                $this->logger->debug('Socket(' . $socketId . ') returned invalid frame data: ' . socket_strerror(socket_last_error($this->serverSocket)));
-            } else {
-                if ($this->asyncDecompress) {
-                    if (($payload = zstd_uncompress($rawFrameData)) === false) {
-                        $this->closeSocket($socketId);
-                        $this->logger->emergency('Socket with id (' . $socketId . ') data could not be decompressed.');
-                        return;
-                    }
-                } else {
-                    $payload = $rawFrameData;
-                }
-
-                $pk = new ForwardPacket();
-                $pk->payload = $payload;
-
-                $this->putPacket($socketId, $pk);
-            }
-        }
-    }
-
-    public function getSocket(int $socketId): ?Socket
-    {
-        return ((array)$this->sockets)[$socketId] ?? null;
-    }
-
-    private function get(Socket $socket, int $remainingLength): ?string
-    {
-        $packet = '';
-        $buffer = '';
-
-        while ($remainingLength > 0) {
-            $length = min(65535, $remainingLength);
-            $receivedLength = socket_recv($socket, $buffer, $length, MSG_WAITALL);
-
-            if ($receivedLength === false || $receivedLength !== $length) {
-                return null;
-            }
-
-            $packet .= $buffer;
-            $remainingLength -= $length;
-        }
-
-        return $packet;
-    }
-
-    private function closeSocket(int $socketId, bool $notify = true): void
-    {
-        if (($socket = $this->getSocket($socketId)) !== null) {
-            socket_close($socket);
-            unset($this->sockets[$socketId]);
-        }
-
-        $this->logger->debug("Disconnected socket with id " . $socketId);
-
-        if ($notify) {
-            $this->putPacket($socketId, new DisconnectPacket());
         }
     }
 
@@ -351,13 +253,118 @@ class ProxyServer extends Thread
                         }
                     } catch (PacketHandlingException $exception) {
                         $this->closeSocket($socketId);
-                        $this->logger->logException($exception);
                     }
                 } catch (BinaryDataException $exception) {
                     throw PacketHandlingException::wrap($exception, "Error processing " . $pk->pid());
                 }
             }
         }
+    }
+
+    public function getSocket(int $socketId): ?Socket
+    {
+        return ((array)$this->sockets)[$socketId] ?? null;
+    }
+
+    private function closeSocket(int $socketId, bool $notify = true): void
+    {
+        if (($socket = $this->getSocket($socketId)) !== null) {
+            socket_close($socket);
+            unset($this->sockets[$socketId]);
+        }
+
+        $this->logger->debug("Disconnected socket with id " . $socketId);
+
+        if ($notify) {
+            $this->putPacket($socketId, new DisconnectPacket());
+        }
+    }
+
+    private function putPacket(int $socketId, ProxyPacket $pk): void
+    {
+        $serializer = new ProxyPacketSerializer();
+
+        $pk->encode($socketId, $serializer);
+
+        $this->threadToMainWriter->write($serializer->getBuffer());
+    }
+
+    private function onServerSocketReceive(): void
+    {
+        $socket = socket_accept($this->serverSocket);
+        if ($socket === false) {
+            $this->logger->debug("Couldn't accept new socket request: " . socket_strerror(socket_last_error($this->serverSocket)));
+        } elseif (socket_getpeername($socket, $ip, $port)) {
+            $this->sockets[$socketId = $this->socketId++] = $socket;
+
+            $pk = new LoginPacket();
+            $pk->ip = $ip;
+            $pk->port = $port;
+
+            $this->putPacket($socketId, $pk);
+        } else {
+            $this->logger->debug('New socket request already disconnected: ' . socket_strerror(socket_last_error($this->serverSocket)));
+        }
+    }
+
+    private function onSocketReceive(int $socketId): void
+    {
+        /** @var Socket $socket */
+        $socket = $this->getSocket($socketId);
+
+        if (($rawFrameLength = $this->get($socket, 4)) === null) {
+            $this->closeSocket($socketId);
+            $this->logger->debug('Socket(' . $socketId . ') returned invalid frame length: ' . socket_strerror(socket_last_error($socket)));
+        } else {
+            try {
+                $packetLength = Binary::readInt($rawFrameLength);
+            } catch (BinaryDataException $exception) {
+                $this->closeSocket($socketId);
+                $this->logger->logException($exception);
+                return;
+            }
+            $rawFrameData = $this->get($socket, $packetLength);
+
+            if ($rawFrameData === null) {
+                $this->closeSocket($socketId);
+                $this->logger->debug('Socket(' . $socketId . ') returned invalid frame data: ' . socket_strerror(socket_last_error($socket)));
+            } else {
+                if ($this->asyncDecompress) {
+                    if (($payload = zstd_uncompress($rawFrameData)) === false) {
+                        $this->closeSocket($socketId);
+                        $this->logger->emergency('Socket with id (' . $socketId . ') data could not be decompressed.');
+                        return;
+                    }
+                } else {
+                    $payload = $rawFrameData;
+                }
+
+                $pk = new ForwardPacket();
+                $pk->payload = $payload;
+
+                $this->putPacket($socketId, $pk);
+            }
+        }
+    }
+
+    private function get(Socket $socket, int $remainingLength): ?string
+    {
+        $packet = '';
+        $buffer = '';
+
+        while ($remainingLength > 0) {
+            $length = min(65535, $remainingLength);
+            $receivedLength = socket_recv($socket, $buffer, $length, MSG_WAITALL);
+
+            if ($receivedLength === false || $receivedLength !== $length) {
+                return null;
+            }
+
+            $packet .= $buffer;
+            $remainingLength -= $length;
+        }
+
+        return $packet;
     }
 
     public function waitShutdown(): void
