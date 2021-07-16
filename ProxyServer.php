@@ -314,7 +314,7 @@ class ProxyServer extends Thread
 
         if (($rawFrameLength = $this->get($socket, 4)) === null) {
             $this->closeSocket($socketId);
-            $this->logger->debug('Socket(' . $socketId . ') returned invalid frame length: ' . socket_strerror(socket_last_error($socket)));
+            $this->logger->debug('Socket(' . $socketId . ') returned invalid frame data length');
         } else {
             try {
                 $packetLength = Binary::readInt($rawFrameLength);
@@ -327,7 +327,7 @@ class ProxyServer extends Thread
 
             if ($rawFrameData === null) {
                 $this->closeSocket($socketId);
-                $this->logger->debug('Socket(' . $socketId . ') returned invalid frame data: ' . socket_strerror(socket_last_error($socket)));
+                $this->logger->debug('Socket(' . $socketId . ') returned invalid frame data');
             } else {
                 if ($this->asyncDecompress) {
                     if (($payload = zstd_uncompress($rawFrameData)) === false) {
