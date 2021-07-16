@@ -246,8 +246,14 @@ class ProxyServer extends Thread
                                 /** @var ForwardPacket $pk */
                                 if (($socket = $this->getSocket($socketId)) === null) {
                                     throw new PacketHandlingException('Socket with id (' . $socketId . ") doesn't exist.");
-                                } elseif (socket_write($socket, Binary::writeInt(strlen($pk->payload)) . $pk->payload) === false) {
-                                    throw new PacketHandlingException('Socket with id (' . $socketId . ") isn't writable.");
+                                } else {
+                                    try {
+                                        if (socket_write($socket, Binary::writeInt(strlen($pk->payload)) . $pk->payload) === false) {
+                                            throw new PacketHandlingException('Socket with id (' . $socketId . ") isn't writable.");
+                                        }
+                                    } catch (ErrorException $exception) {
+                                        throw PacketHandlingException::wrap($exception, 'Socket with id (' . $socketId . ") isn't writable.");
+                                    }
                                 }
                                 break;
                         }
