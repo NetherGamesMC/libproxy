@@ -14,7 +14,8 @@ class ProxyPacketSerializer extends BinaryStream
 {
     public function getIp(): string
     {
-        if (($ipLength = $this->getShort()) <= 15 && filter_var($ip = $this->get($ipLength), FILTER_VALIDATE_IP)) {
+        $ip = $this->get($this->getShort());
+        if ($ip === "127.0.0.1" || $ip === "localhost" || filter_var($ip, FILTER_VALIDATE_IP)) {
             return $ip;
         }
 
@@ -23,7 +24,7 @@ class ProxyPacketSerializer extends BinaryStream
 
     public function putIp(string $ip): void
     {
-        if (filter_var($ip, FILTER_VALIDATE_IP)) {
+        if ($ip === "127.0.0.1" || $ip === "localhost" || filter_var($ip, FILTER_VALIDATE_IP)) {
             $this->putShort(strlen($ip));
             $this->put($ip);
         }
