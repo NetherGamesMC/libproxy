@@ -236,9 +236,7 @@ class ProxyServer extends Thread
                         switch ($pk->pid()) {
                             case DisconnectPacket::NETWORK_ID:
                                 /** @var DisconnectPacket $pk */
-                                if ($this->getSocket($socketId) === null) {
-                                    throw new PacketHandlingException('Socket with id (' . $socketId . ") doesn't exist.");
-                                } else {
+                                if ($this->getSocket($socketId) !== null) {
                                     $this->closeSocket($socketId, false);
                                 }
                                 break;
