@@ -14,21 +14,12 @@ class ProxyPacketSerializer extends BinaryStream
 {
     public function getIp(): string
     {
-        $ip = $this->get($this->getShort());
-        if ($ip === "127.0.0.1" || $ip === "localhost" || filter_var($ip, FILTER_VALIDATE_IP)) {
-            return $ip;
-        }
-
-        throw new BinaryDataException("Invalid IP provided");
+        return $this->get($this->getShort());
     }
 
     public function putIp(string $ip): void
     {
-        if ($ip === "127.0.0.1" || $ip === "localhost" || filter_var($ip, FILTER_VALIDATE_IP)) {
-            $this->putShort(strlen($ip));
-            $this->put($ip);
-        }
-
-        throw new BinaryDataException("Invalid IP provided");
+        $this->putShort(strlen($ip));
+        $this->put($ip);
     }
 }
