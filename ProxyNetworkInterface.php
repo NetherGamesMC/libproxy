@@ -76,7 +76,7 @@ final class ProxyNetworkInterface implements NetworkInterface
             $threadToMainBuffer = new Threaded();
 
             $asyncDecompress = $server->getConfigGroup()->getPropertyBool("network.async-compression", true);
-            ZstdCompressor::setInstance(new ZstdCompressor($asyncDecompress));
+            ProxyCompressor::setInstance(new ProxyCompressor($asyncDecompress));
 
             $this->proxy = new ProxyServer(
                 $server->getIp(),
@@ -177,7 +177,7 @@ final class ProxyNetworkInterface implements NetworkInterface
             PacketPool::getInstance(),
             new ProxyPacketSender($socketId, $this),
             RakLibInterface::getBroadcaster($this->server, ProtocolInfo::CURRENT_PROTOCOL),
-            ZstdCompressor::getInstance(),
+            ProxyCompressor::getInstance(),
             $ip,
             $port
         );
