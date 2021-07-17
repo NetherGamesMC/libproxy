@@ -12,7 +12,6 @@ use libproxy\protocol\LoginPacket;
 use libproxy\protocol\ProxyPacket;
 use libproxy\protocol\ProxyPacketPool;
 use libproxy\protocol\ProxyPacketSerializer;
-use pocketmine\network\mcpe\compression\ZlibCompressor;
 use pocketmine\network\mcpe\raklib\PthreadsChannelReader;
 use pocketmine\network\mcpe\raklib\PthreadsChannelWriter;
 use pocketmine\network\PacketHandlingException;
@@ -45,7 +44,6 @@ use function socket_set_option;
 use function socket_strerror;
 use function socket_write;
 use function strlen;
-use function zlib_decode;
 use function zstd_uncompress;
 use const AF_INET;
 use const MSG_WAITALL;
@@ -331,39 +329,24 @@ class ProxyServer extends Thread
                 $this->logger->logException($exception);
                 return;
             }
-            $payload = $this->get($socket, $packetLength);
+            $rawFrameData = $this->get($socket, $packetLength);
 
-            if ($payload === null) {
+            if ($rawFrameData === null) {
                 $this->closeSocket($socketId);
                 $this->logger->debug('Socket(' . $socketId . ') returned invalid frame data');
             } else {
                 if ($this->asyncDecompress) {
-                    try {
-                        $stream = new ProxyPacketSerializer($payload);
-                        $compressionMethod = $stream->getByte();
-
-                        if ($compressionMethod === ProxyCompressor::COMPRESSION_ZSTD) {
-                            $result = zstd_uncompress($stream->getRemaining());
-                        } elseif ($compressionMethod === ProxyCompressor::COMPRESSION_ZLIB) {
-                            $result = zlib_decode($stream->getRemaining(), ZlibCompressor::DEFAULT_MAX_DECOMPRESSION_SIZE);
-                        } else {
-                            $result = false;
-                        }
-
-                        if ($result === false) {
-                            throw new BinaryDataException("Failed to decompress data");
-                        }
-                    } catch (BinaryDataException $exception) {
+                    if (($payload = zstd_uncompress($rawFrameData)) === false) {
                         $this->closeSocket($socketId);
-                        $this->logger->logException($exception);
+                        $this->logger->emergency('Socket with id (' . $socketId . ') data could not be decompressed.');
                         return;
                     }
                 } else {
-                    $result = $payload;
+                    $payload = $rawFrameData;
                 }
 
                 $pk = new ForwardPacket();
-                $pk->payload = $result;
+                $pk->payload = $payload;
 
                 $this->putPacket($socketId, $pk);
             }
@@ -389,7 +372,7 @@ class ProxyServer extends Thread
             }
 
             return $packet;
-        } catch (ErrorException $exception) {
+        } catch (ErrorException $exception){
             return null;
         }
     }
