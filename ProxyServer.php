@@ -28,6 +28,7 @@ use function array_keys;
 use function error_get_last;
 use function gc_collect_cycles;
 use function gc_enable;
+use function gc_mem_caches;
 use function ini_set;
 use function min;
 use function register_shutdown_function;
@@ -164,7 +165,7 @@ class ProxyServer extends Thread
 
             while (!$this->isKilled) {
                 $this->tickProcessor();
-                var_dump(gc_collect_cycles());
+                var_dump(gc_mem_caches());
             }
 
             $this->waitShutdown();
