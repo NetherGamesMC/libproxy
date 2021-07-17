@@ -9,7 +9,9 @@ namespace libproxy;
 use pocketmine\network\mcpe\compression\Compressor;
 use pocketmine\network\mcpe\compression\DecompressionException;
 use pocketmine\utils\AssumptionFailedError;
+use pocketmine\utils\Binary;
 use pocketmine\utils\SingletonTrait;
+use function strlen;
 use function zstd_compress;
 use function zstd_uncompress;
 
@@ -33,7 +35,8 @@ class ZstdCompressor implements Compressor
     }
 
     /**
-     * Decompression is done on the main thread, we're decompressing this on the proxy thread
+     * Decompression is done on the main thread normally, we're decompressing this on the proxy thread when async is enabled
+     *
      * @param string $payload
      * @return string
      */
@@ -52,6 +55,13 @@ class ZstdCompressor implements Compressor
         return $result;
     }
 
+    /**
+     * The proxy needs to know the length of the string before compression for allocating buffers (JAVA)
+     * @see decompress() doesn't need this as it's not send back by the Proxy, since we don't need it
+     *
+     * @param string $payload
+     * @return string
+     */
     public function compress(string $payload): string
     {
         $result = zstd_compress($payload, self::ZSTD_COMPRESSION_LEVEL);
@@ -60,6 +70,6 @@ class ZstdCompressor implements Compressor
             throw new AssumptionFailedError("ZSTD compression failed");
         }
 
-        return $result;
+        return Binary::writeInt(strlen($payload)) . $result;
     }
 }

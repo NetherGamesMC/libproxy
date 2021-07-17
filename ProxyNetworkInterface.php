@@ -211,6 +211,9 @@ final class ProxyNetworkInterface implements NetworkInterface
         //NOPEH
     }
 
+    /**
+     * @throws Exception
+     */
     public function tick(): void
     {
         if (!$this->proxy->isRunning()) {
