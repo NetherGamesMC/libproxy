@@ -45,8 +45,8 @@ final class ProxyNetworkInterface implements NetworkInterface
 
     /** @var Server */
     private Server $server;
-    /** @var ProxyServer */
-    private ProxyServer $proxy;
+    /** @var ProxyThread */
+    private ProxyThread $proxy;
     /** @var SleeperNotifier */
     private SleeperNotifier $notifier;
     /** @var Socket */
@@ -78,7 +78,7 @@ final class ProxyNetworkInterface implements NetworkInterface
             $asyncDecompress = $server->getConfigGroup()->getPropertyBool("network.async-compression", true);
             ZstdCompressor::setInstance(new ZstdCompressor($asyncDecompress));
 
-            $this->proxy = new ProxyServer(
+            $this->proxy = new ProxyThread(
                 $server->getIp(),
                 $port,
                 $server->getLogger(),
