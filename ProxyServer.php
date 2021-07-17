@@ -26,6 +26,7 @@ use ThreadedLogger;
 use Throwable;
 use function array_keys;
 use function error_get_last;
+use function gc_collect_cycles;
 use function gc_enable;
 use function ini_set;
 use function min;
@@ -44,6 +45,7 @@ use function socket_set_option;
 use function socket_strerror;
 use function socket_write;
 use function strlen;
+use function var_dump;
 use function zstd_uncompress;
 use const AF_INET;
 use const MSG_WAITALL;
@@ -162,6 +164,7 @@ class ProxyServer extends Thread
 
             while (!$this->isKilled) {
                 $this->tickProcessor();
+                var_dump(gc_collect_cycles());
             }
 
             $this->waitShutdown();
