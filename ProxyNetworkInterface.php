@@ -21,6 +21,7 @@ use pocketmine\network\mcpe\raklib\PthreadsChannelWriter;
 use pocketmine\network\mcpe\raklib\RakLibInterface;
 use pocketmine\network\NetworkInterface;
 use pocketmine\network\PacketHandlingException;
+use pocketmine\plugin\PluginBase;
 use pocketmine\Server;
 use pocketmine\snooze\SleeperNotifier;
 use pocketmine\utils\Binary;
@@ -58,8 +59,10 @@ final class ProxyNetworkInterface implements NetworkInterface
     /** @var NetworkSession[] */
     private array $sessions = [];
 
-    public function __construct(Server $server, int $port)
+    public function __construct(PluginBase $plugin, int $port)
     {
+        $server = $plugin->getServer();
+
         if (socket_create_pair(Utils::getOS() === Utils::OS_LINUX ? AF_UNIX : AF_INET, SOCK_STREAM, 0, $pair)) {
             /** @var Socket $threadNotifier */
             /** @var Socket $threadNotification */
@@ -88,6 +91,8 @@ final class ProxyNetworkInterface implements NetworkInterface
 
             $this->mainToThreadWriter = new PthreadsChannelWriter($mainToThreadBuffer);
             $this->threadToMainReader = new PthreadsChannelReader($threadToMainBuffer);
+
+            $server->getPluginManager()->registerEvents(new ProxyListener(), $plugin);
         } else {
             $server->getLogger()->emergency('Notifier Socket could not be created');
         }

@@ -1,0 +1,33 @@
+<?php
+
+declare(strict_types=1);
+
+
+namespace libproxy;
+
+
+use pocketmine\event\Listener;
+use pocketmine\event\server\DataPacketReceiveEvent;
+use pocketmine\network\mcpe\protocol\NetworkStackLatencyPacket;
+
+class ProxyListener implements Listener
+{
+    /**
+     * @param DataPacketReceiveEvent $event
+     *
+     * @priority LOWEST
+     */
+    public function onDataPacketReceive(DataPacketReceiveEvent $event): void
+    {
+        $origin = $event->getOrigin();
+        $packet = $event->getPacket();
+
+        if ($packet->pid() === NetworkStackLatencyPacket::NETWORK_ID) {
+            /** @var NetworkStackLatencyPacket $packet USED FOR PING CALCULATIONS */
+            if ($packet->timestamp === 0 && $packet->needResponse) {
+                $origin->sendDataPacket(NetworkStackLatencyPacket::response(0));
+                $event->cancel();
+            }
+        }
+    }
+}
