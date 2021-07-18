@@ -24,7 +24,7 @@ class ProxyListener implements Listener
 
         if ($packet->pid() === NetworkStackLatencyPacket::NETWORK_ID) {
             /** @var NetworkStackLatencyPacket $packet USED FOR PING CALCULATIONS */
-            if ($packet->timestamp === 0 && $packet->needResponse) {
+            if ($packet->timestamp === 0 && $packet->needResponse && ($player = $origin->getPlayer()) !== null && $player->isConnected()) {
                 $origin->sendDataPacket(NetworkStackLatencyPacket::response(0));
                 $event->cancel();
             }

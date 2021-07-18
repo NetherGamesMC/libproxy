@@ -21,7 +21,6 @@ use pocketmine\utils\BinaryDataException;
 use Socket;
 use Threaded;
 use ThreadedLogger;
-use function array_keys;
 use function min;
 use function socket_accept;
 use function socket_close;
@@ -38,15 +37,17 @@ use const MSG_WAITALL;
 
 class ProxyServer
 {
-    public const SERVER_SOCKET = -1;
-    public const NOTIFY_SOCKET = -2;
+    private const SERVER_SOCKET = -1;
+    private const NOTIFY_SOCKET = -2;
+
+    private const MAX_FRAME_LENGTH = 65535;
 
     /** @var ThreadedLogger */
-    protected ThreadedLogger $logger;
+    private ThreadedLogger $logger;
     /** @var PthreadsChannelReader */
-    protected PthreadsChannelReader $mainToThreadReader;
+    private PthreadsChannelReader $mainToThreadReader;
     /** @var PthreadsChannelWriter */
-    protected PthreadsChannelWriter $threadToMainWriter;
+    private PthreadsChannelWriter $threadToMainWriter;
     /** @var bool */
     private bool $asyncDecompress;
 
@@ -95,12 +96,9 @@ class ProxyServer
         /** @phpstan-ignore-next-line */
         $select = socket_select($read, $write, $except, 5);
         if ($select !== false && $select > 0) {
-            /** @var int[] $socketIds */
-            $socketIds = array_keys($read);
-
-            foreach ($socketIds as $socketId) {
+            foreach ($read as $socketId => $socket) {
                 if ($socketId === self::NOTIFY_SOCKET) {
-                    socket_read($this->notifySocket, 65535); //clean socket
+                    socket_read($socket, self::MAX_FRAME_LENGTH); //clean socket
                     $this->pushSockets();
                 } elseif ($socketId === self::SERVER_SOCKET) {
                     $this->onServerSocketReceive();
@@ -246,7 +244,7 @@ class ProxyServer
             $buffer = '';
 
             while ($remainingLength > 0) {
-                $length = min(65535, $remainingLength);
+                $length = min(self::MAX_FRAME_LENGTH, $remainingLength);
                 $receivedLength = socket_recv($socket, $buffer, $length, MSG_WAITALL);
 
                 if ($receivedLength === false || $receivedLength !== $length) {

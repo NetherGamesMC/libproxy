@@ -159,7 +159,6 @@ final class ProxyNetworkInterface implements NetworkInterface
                 }
             } catch (PacketHandlingException $exception) {
                 $this->close($socketId);
-                $this->server->getLogger()->logException($exception);
             }
         }
     }

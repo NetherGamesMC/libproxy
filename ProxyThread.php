@@ -37,11 +37,11 @@ class ProxyThread extends Thread
     /** @var string|null */
     public ?string $crashInfo = null;
     /** @var ThreadedLogger */
-    protected ThreadedLogger $logger;
+    private ThreadedLogger $logger;
     /** @var bool */
-    protected bool $cleanShutdown = false;
+    private bool $cleanShutdown = false;
     /** @var bool */
-    protected bool $ready = false;
+    private bool $ready = false;
 
 
     /** @var Threaded */
@@ -127,11 +127,6 @@ class ProxyThread extends Thread
 
             register_shutdown_function([$this, 'shutdownHandler']);
 
-            $this->synchronized(function (): void {
-                $this->ready = true;
-                $this->notify();
-            });
-
             $proxy = new ProxyServer(
                 $this->logger,
                 $this->createServerSocket(),
@@ -141,6 +136,11 @@ class ProxyThread extends Thread
                 $this->notifySocket,
                 $this->asyncDecompress
             );
+
+            $this->synchronized(function (): void {
+                $this->ready = true;
+                $this->notify();
+            });
 
             while (!$this->isKilled) {
                 $proxy->tickProcessor();
