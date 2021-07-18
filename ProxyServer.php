@@ -97,6 +97,7 @@ class ProxyServer
         $select = socket_select($read, $write, $except, 5);
         if ($select !== false && $select > 0) {
             foreach ($read as $socketId => $socket) {
+                /** @var int $socketId */
                 if ($socketId === self::NOTIFY_SOCKET) {
                     socket_read($socket, self::MAX_FRAME_LENGTH); //clean socket
                     $this->pushSockets();
