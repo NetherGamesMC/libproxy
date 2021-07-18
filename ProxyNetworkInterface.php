@@ -5,6 +5,7 @@ declare(strict_types=1);
 
 namespace libproxy;
 
+use ErrorException;
 use Exception;
 use libproxy\protocol\DisconnectPacket;
 use libproxy\protocol\ForwardPacket;
@@ -202,7 +203,12 @@ final class ProxyNetworkInterface implements NetworkInterface
         $pk->encode($socketId, $serializer);
 
         $this->mainToThreadWriter->write($serializer->getBuffer());
-        socket_write($this->threadNotifier, "\x00"); // wakes up the socket_select function
+
+        try {
+            socket_write($this->threadNotifier, "\x00"); // wakes up the socket_select function
+        } catch (ErrorException $exception){
+            $this->server->getLogger()->debug('Packet was send while the client was already shut down');
+        }
     }
 
     public function setName(string $name): void
