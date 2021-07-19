@@ -14,7 +14,6 @@ use libproxy\protocol\ProxyPacket;
 use libproxy\protocol\ProxyPacketPool;
 use libproxy\protocol\ProxyPacketSerializer;
 use pocketmine\network\mcpe\NetworkSession;
-use pocketmine\network\mcpe\protocol\PacketDecodeException;
 use pocketmine\network\mcpe\protocol\PacketPool;
 use pocketmine\network\mcpe\protocol\ProtocolInfo;
 use pocketmine\network\mcpe\raklib\PthreadsChannelReader;
@@ -26,6 +25,7 @@ use pocketmine\plugin\PluginBase;
 use pocketmine\Server;
 use pocketmine\snooze\SleeperNotifier;
 use pocketmine\utils\Binary;
+use pocketmine\utils\BinaryDataException;
 use pocketmine\utils\Utils;
 use RuntimeException;
 use Socket;
@@ -122,7 +122,7 @@ final class ProxyNetworkInterface implements NetworkInterface
         } else {
             try {
                 $socketId = $pk->decode($stream = new ProxyPacketSerializer($buffer));
-            } catch (PacketDecodeException $e) {
+            } catch (BinaryDataException $e) {
                 throw PacketHandlingException::wrap($e);
             }
 
