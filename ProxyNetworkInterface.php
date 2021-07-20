@@ -76,7 +76,7 @@ final class ProxyNetworkInterface implements NetworkInterface
             $threadToMainBuffer = new Threaded();
 
             $asyncDecompress = $server->getConfigGroup()->getPropertyBool("network.async-compression", true);
-            ZstdCompressor::setInstance(new ZstdCompressor($asyncDecompress));
+            ProxyCompressor::setInstance(new ProxyCompressor($asyncDecompress));
 
             $this->proxy = new ProxyThread(
                 $server->getIp(),
@@ -176,7 +176,7 @@ final class ProxyNetworkInterface implements NetworkInterface
             PacketPool::getInstance(),
             new ProxyPacketSender($socketId, $this),
             RakLibInterface::getBroadcaster($this->server, ProtocolInfo::CURRENT_PROTOCOL),
-            ZstdCompressor::getInstance(),
+            ProxyCompressor::getInstance(),
             $ip,
             $port
         );
@@ -205,7 +205,7 @@ final class ProxyNetworkInterface implements NetworkInterface
 
         try {
             socket_write($this->threadNotifier, "\x00"); // wakes up the socket_select function
-        } catch (Exception $exception){
+        } catch (Exception $exception) {
             $this->server->getLogger()->debug('Packet was send while the client was already shut down');
         }
     }
