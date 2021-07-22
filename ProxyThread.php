@@ -124,6 +124,7 @@ class ProxyThread extends Thread
             gc_enable();
             ini_set('display_errors', '1');
             ini_set('display_startup_errors', '1');
+            ini_set('memory_limit', '512M');
 
             register_shutdown_function([$this, 'shutdownHandler']);
 
