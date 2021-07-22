@@ -6,7 +6,6 @@ declare(strict_types=1);
 namespace libproxy;
 
 use ErrorException;
-use Exception;
 use libproxy\protocol\DisconnectPacket;
 use libproxy\protocol\ForwardPacket;
 use libproxy\protocol\LoginPacket;
@@ -164,8 +163,8 @@ class ProxyServer
         if (($socket = $this->getSocket($socketId)) !== null) {
             try {
                 socket_shutdown($socket);
-            } catch (Exception $exception){
-                $this->logger->logException($exception);
+            } catch (ErrorException $exception) {
+                $this->logger->debug('Socket is not connected anymore.');
             }
             socket_close($socket);
             unset($this->sockets[$socketId]);
