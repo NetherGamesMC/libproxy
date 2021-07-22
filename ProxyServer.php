@@ -6,6 +6,7 @@ declare(strict_types=1);
 namespace libproxy;
 
 use ErrorException;
+use Exception;
 use libproxy\protocol\DisconnectPacket;
 use libproxy\protocol\ForwardPacket;
 use libproxy\protocol\LoginPacket;
@@ -29,6 +30,7 @@ use function socket_last_error;
 use function socket_read;
 use function socket_recv;
 use function socket_select;
+use function socket_shutdown;
 use function socket_strerror;
 use function socket_write;
 use function strlen;
@@ -160,6 +162,11 @@ class ProxyServer
     private function closeSocket(int $socketId, bool $notify = true): void
     {
         if (($socket = $this->getSocket($socketId)) !== null) {
+            try {
+                socket_shutdown($socket);
+            } catch (Exception $exception){
+                $this->logger->logException($exception);
+            }
             socket_close($socket);
             unset($this->sockets[$socketId]);
         }
@@ -187,6 +194,8 @@ class ProxyServer
             $this->logger->debug("Couldn't accept new socket request: " . socket_strerror(socket_last_error($this->serverSocket)));
         } elseif (socket_getpeername($socket, $ip, $port)) {
             $this->sockets[$socketId = $this->socketId++] = $socket;
+
+            $this->logger->debug('Socket(' . $socketId . ') created a session from ' . $ip . ':' . $port);
 
             $pk = new LoginPacket();
             $pk->ip = $ip;
