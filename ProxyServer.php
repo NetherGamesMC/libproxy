@@ -191,18 +191,24 @@ class ProxyServer
         $socket = socket_accept($this->serverSocket);
         if ($socket === false) {
             $this->logger->debug("Couldn't accept new socket request: " . socket_strerror(socket_last_error($this->serverSocket)));
-        } elseif (socket_getpeername($socket, $ip, $port)) {
-            $this->sockets[$socketId = $this->socketId++] = $socket;
-
-            $this->logger->debug('Socket(' . $socketId . ') created a session from ' . $ip . ':' . $port);
-
-            $pk = new LoginPacket();
-            $pk->ip = $ip;
-            $pk->port = $port;
-
-            $this->putPacket($socketId, $pk);
         } else {
-            $this->logger->debug('New socket request already disconnected: ' . socket_strerror(socket_last_error($this->serverSocket)));
+            try {
+                if (socket_getpeername($socket, $ip, $port)) {
+                    $this->sockets[$socketId = $this->socketId++] = $socket;
+
+                    $this->logger->debug('Socket(' . $socketId . ') created a session from ' . $ip . ':' . $port);
+
+                    $pk = new LoginPacket();
+                    $pk->ip = $ip;
+                    $pk->port = $port;
+
+                    $this->putPacket($socketId, $pk);
+                } else {
+                    $this->logger->debug('New socket request already disconnected: ' . socket_strerror(socket_last_error($this->serverSocket)));
+                }
+            } catch (ErrorException $exception) {
+                $this->logger->debug('New socket request already disconnected: ' . socket_strerror(socket_last_error($this->serverSocket)));
+            }
         }
     }
 
