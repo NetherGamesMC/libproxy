@@ -17,10 +17,9 @@ abstract class ProxyPacket
         return $this::NETWORK_ID;
     }
 
-    final public function encode(int $socketId, ProxyPacketSerializer $out): void
+    final public function encode(ProxyPacketSerializer $out): void
     {
         $out->putUnsignedVarInt(static::NETWORK_ID);
-        $out->putLInt($socketId);
         $this->encodePayload($out);
     }
 
@@ -29,13 +28,10 @@ abstract class ProxyPacket
     /**
      * @throws BinaryDataException
      */
-    final public function decode(ProxyPacketSerializer $in): int
+    final public function decode(ProxyPacketSerializer $in): void
     {
         $in->getUnsignedVarInt();
-        $socketId = $in->getLInt();
         $this->decodePayload($in);
-
-        return $socketId;
     }
 
     /**

@@ -116,14 +116,18 @@ final class ProxyNetworkInterface implements NetworkInterface
      */
     private function onPacketReceive(string $buffer): void
     {
-        if (($pk = ProxyPacketPool::getInstance()->getPacket($buffer)) === null) {
+        $stream = new ProxyPacketSerializer($buffer);
+        $socketId = $stream->getLInt();
+
+        if (($pk = ProxyPacketPool::getInstance()->getPacket($buffer, $stream->getOffset())) === null) {
             $offset = 0;
             throw new PacketHandlingException('Proxy packet with id (' . Binary::readUnsignedVarInt($buffer, $offset) . ') does not exist');
         } else {
             try {
-                $socketId = $pk->decode($stream = new ProxyPacketSerializer($buffer));
+                $pk->decode($stream);
             } catch (BinaryDataException $e) {
-                throw PacketHandlingException::wrap($e);
+                $this->close($socketId);
+                return;
             }
 
             if (!$stream->feof()) {
@@ -164,9 +168,38 @@ final class ProxyNetworkInterface implements NetworkInterface
         }
     }
 
+    public function close(int $socketId, bool $notify = true): void
+    {
+        if (($session = $this->getSession($socketId)) !== null) {
+            $session->onClientDisconnect('Socket disconnect');
+        }
+
+        unset($this->sessions[$socketId]);
+
+        if ($notify) {
+            $this->putPacket($socketId, new DisconnectPacket());
+        }
+    }
+
     public function getSession(int $socketId): ?NetworkSession
     {
         return $this->sessions[$socketId] ?? null;
+    }
+
+    public function putPacket(int $socketId, ProxyPacket $pk): void
+    {
+        $serializer = new ProxyPacketSerializer();
+        $serializer->putLInt($socketId);
+
+        $pk->encode($serializer);
+
+        $this->mainToThreadWriter->write($serializer->getBuffer());
+
+        try {
+            socket_write($this->threadNotifier, "\x00"); // wakes up the socket_select function
+        } catch (Error $exception) {
+            $this->server->getLogger()->debug('Packet was send while the client was already shut down');
+        }
     }
 
     public function createSession(int $socketId, string $ip, int $port): NetworkSession
@@ -181,34 +214,6 @@ final class ProxyNetworkInterface implements NetworkInterface
             $ip,
             $port
         );
-    }
-
-    public function close(int $socketId, bool $notify = true): void
-    {
-        if (($session = $this->getSession($socketId)) !== null) {
-            $session->onClientDisconnect('Socket disconnect');
-        }
-
-        unset($this->sessions[$socketId]);
-
-        if ($notify) {
-            $this->putPacket($socketId, new DisconnectPacket());
-        }
-    }
-
-    public function putPacket(int $socketId, ProxyPacket $pk): void
-    {
-        $serializer = new ProxyPacketSerializer();
-
-        $pk->encode($socketId, $serializer);
-
-        $this->mainToThreadWriter->write($serializer->getBuffer());
-
-        try {
-            socket_write($this->threadNotifier, "\x00"); // wakes up the socket_select function
-        } catch (Error $exception) {
-            $this->server->getLogger()->debug('Packet was send while the client was already shut down');
-        }
     }
 
     public function setName(string $name): void

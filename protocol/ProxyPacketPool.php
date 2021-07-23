@@ -42,9 +42,8 @@ class ProxyPacketPool
     /**
      * @throws BinaryDataException
      */
-    public function getPacket(string $buffer): ?ProxyPacket
+    public function getPacket(string $buffer, int $offset): ?ProxyPacket
     {
-        $offset = 0;
         return $this->getPacketById(Binary::readUnsignedVarInt($buffer, $offset));
     }
 

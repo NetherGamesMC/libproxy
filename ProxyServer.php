@@ -114,48 +114,47 @@ class ProxyServer
     private function pushSockets(): void
     {
         while (($payload = $this->mainToThreadReader->read()) !== null) {
-            if (($pk = ProxyPacketPool::getInstance()->getPacket($payload)) === null) {
+            $stream = new ProxyPacketSerializer($payload);
+            $socketId = $stream->getLInt();
+
+            if (($pk = ProxyPacketPool::getInstance()->getPacket($payload, $stream->getOffset())) === null) {
                 throw new PacketHandlingException('Packet does not exist');
             } else {
                 try {
-                    $socketId = $pk->decode(new ProxyPacketSerializer($payload));
+                    $pk->decode($stream);
+                } catch (BinaryDataException $e) {
+                    $this->closeSocket($socketId);
+                    return;
+                }
 
-                    try {
-                        switch ($pk->pid()) {
-                            case DisconnectPacket::NETWORK_ID:
-                                /** @var DisconnectPacket $pk */
-                                if ($this->getSocket($socketId) !== null) {
-                                    $this->closeSocket($socketId, false);
-                                }
-                                break;
-                            case ForwardPacket::NETWORK_ID:
-                                /** @var ForwardPacket $pk */
-                                if (($socket = $this->getSocket($socketId)) === null) {
-                                    throw new PacketHandlingException('Socket with id (' . $socketId . ") doesn't exist.");
-                                } else {
-                                    try {
-                                        if (socket_write($socket, Binary::writeInt(strlen($pk->payload)) . $pk->payload) === false) {
-                                            throw new PacketHandlingException('Socket with id (' . $socketId . ") isn't writable.");
-                                        }
-                                    } catch (ErrorException $exception) {
-                                        throw PacketHandlingException::wrap($exception, 'Socket with id (' . $socketId . ") isn't writable.");
+                try {
+                    switch ($pk->pid()) {
+                        case DisconnectPacket::NETWORK_ID:
+                            /** @var DisconnectPacket $pk */
+                            if ($this->getSocket($socketId) !== null) {
+                                $this->closeSocket($socketId, false);
+                            }
+                            break;
+                        case ForwardPacket::NETWORK_ID:
+                            /** @var ForwardPacket $pk */
+                            if (($socket = $this->getSocket($socketId)) === null) {
+                                throw new PacketHandlingException('Socket with id (' . $socketId . ") doesn't exist.");
+                            } else {
+                                try {
+                                    if (socket_write($socket, Binary::writeInt(strlen($pk->payload)) . $pk->payload) === false) {
+                                        throw new PacketHandlingException('Socket with id (' . $socketId . ") isn't writable.");
                                     }
+                                } catch (ErrorException $exception) {
+                                    throw PacketHandlingException::wrap($exception, 'Socket with id (' . $socketId . ") isn't writable.");
                                 }
-                                break;
-                        }
-                    } catch (PacketHandlingException $exception) {
-                        $this->closeSocket($socketId);
+                            }
+                            break;
                     }
-                } catch (BinaryDataException $exception) {
-                    throw PacketHandlingException::wrap($exception, "Error processing " . $pk->pid());
+                } catch (PacketHandlingException $exception) {
+                    $this->closeSocket($socketId);
                 }
             }
         }
-    }
-
-    public function getSocket(int $socketId): ?Socket
-    {
-        return $this->sockets[$socketId] ?? null;
     }
 
     private function closeSocket(int $socketId, bool $notify = true): void
@@ -177,11 +176,17 @@ class ProxyServer
         }
     }
 
+    public function getSocket(int $socketId): ?Socket
+    {
+        return $this->sockets[$socketId] ?? null;
+    }
+
     private function putPacket(int $socketId, ProxyPacket $pk): void
     {
         $serializer = new ProxyPacketSerializer();
+        $serializer->putLInt($socketId);
 
-        $pk->encode($socketId, $serializer);
+        $pk->encode($serializer);
 
         $this->threadToMainWriter->write($serializer->getBuffer());
     }
