@@ -123,6 +123,7 @@ class ProxyServer
                 try {
                     $pk->decode($stream);
                 } catch (BinaryDataException $e) {
+                    $this->logger->debug('Closed socket with id(' . $socketId . ') because packet was invalid.');
                     $this->closeSocket($socketId);
                     return;
                 }

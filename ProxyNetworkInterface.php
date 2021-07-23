@@ -126,6 +126,7 @@ final class ProxyNetworkInterface implements NetworkInterface
             try {
                 $pk->decode($stream);
             } catch (BinaryDataException $e) {
+                $this->server->getLogger()->debug('Closed socket with id(' . $socketId . ') because packet was invalid.');
                 $this->close($socketId);
                 return;
             }
