@@ -13,7 +13,7 @@ use libproxy\protocol\ProxyPacket;
 use libproxy\protocol\ProxyPacketPool;
 use libproxy\protocol\ProxyPacketSerializer;
 use pocketmine\network\mcpe\raklib\PthreadsChannelReader;
-use pocketmine\network\mcpe\raklib\PthreadsChannelWriter;
+use pocketmine\network\mcpe\raklib\SnoozeAwarePthreadsChannelWriter;
 use pocketmine\network\PacketHandlingException;
 use pocketmine\snooze\SleeperNotifier;
 use pocketmine\utils\Binary;
@@ -47,8 +47,8 @@ class ProxyServer
     private ThreadedLogger $logger;
     /** @var PthreadsChannelReader */
     private PthreadsChannelReader $mainToThreadReader;
-    /** @var PthreadsChannelWriter */
-    private PthreadsChannelWriter $threadToMainWriter;
+    /** @var SnoozeAwarePthreadsChannelWriter */
+    private SnoozeAwarePthreadsChannelWriter $threadToMainWriter;
     /** @var bool */
     private bool $asyncDecompress;
 
@@ -71,7 +71,7 @@ class ProxyServer
         $this->asyncDecompress = $asyncDecompress;
 
         $this->mainToThreadReader = new PthreadsChannelReader($mainToThreadBuffer);
-        $this->threadToMainWriter = new PthreadsChannelWriter($threadToMainBuffer, $notifier);
+        $this->threadToMainWriter = new SnoozeAwarePthreadsChannelWriter($threadToMainBuffer, $notifier);
     }
 
     public function waitShutdown(): void
