@@ -61,7 +61,7 @@ class ProxyServer
 
     /** @var Socket[] */
     private array $sockets = [];
-    /** @var string[]|int[] */
+    /** @phpstan-var array<int, int|string> */
     private array $socketBuffer = [];
 
     /** @var int */
