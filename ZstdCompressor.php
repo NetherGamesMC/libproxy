@@ -6,6 +6,7 @@ declare(strict_types=1);
 namespace libproxy;
 
 
+use ErrorException;
 use pocketmine\network\mcpe\compression\Compressor;
 use pocketmine\network\mcpe\compression\DecompressionException;
 use pocketmine\utils\AssumptionFailedError;
@@ -46,7 +47,11 @@ class ZstdCompressor implements Compressor
             return $payload;
         }
 
-        $result = zstd_uncompress($payload);
+        try {
+            $result = zstd_uncompress($payload);
+        } catch (ErrorException $exception) {
+            throw new DecompressionException('Failed to decompress data', 0, $exception);
+        }
 
         if ($result === false) {
             throw new DecompressionException("Failed to decompress data");

@@ -261,9 +261,15 @@ class ProxyServer
             unset($this->socketBuffer[$socketId]);
 
             if ($this->asyncDecompress) {
-                if (($payload = zstd_uncompress($rawFrameData)) === false) {
+                try {
+                    if (($payload = zstd_uncompress($rawFrameData)) === false) {
+                        $this->closeSocket($socketId);
+                        $this->logger->emergency('Socket with id (' . $socketId . ') data could not be decompressed.');
+                        return;
+                    }
+                } catch (ErrorException $exception) {
                     $this->closeSocket($socketId);
-                    $this->logger->emergency('Socket with id (' . $socketId . ') data could not be decompressed.');
+                    $this->logger->debug('Socket with id (' . $socketId . ') data could not be decompressed.');
                     return;
                 }
             } else {
