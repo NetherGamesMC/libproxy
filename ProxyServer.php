@@ -225,6 +225,8 @@ class ProxyServer
     private function onSocketReceive(int $socketId): void
     {
         if (isset($this->socketBuffer[$socketId])) {
+            /** @var int $length */
+            /** @var string $buffer */
             [$length, $buffer] = $this->socketBuffer[$socketId];
 
             $rawFrameData = $this->get($socketId, $length, $buffer);
