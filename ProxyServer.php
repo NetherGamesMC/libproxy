@@ -253,6 +253,8 @@ class ProxyServer
             $this->closeSocket($socketId);
             $this->logger->debug('Socket(' . $socketId . ') returned invalid frame data');
         } else {
+            unset($this->socketBuffer[$socketId]);
+
             if ($this->asyncDecompress) {
                 if (($payload = zstd_uncompress($rawFrameData)) === false) {
                     $this->closeSocket($socketId);
