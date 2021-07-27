@@ -61,7 +61,7 @@ class ProxyServer
 
     /** @var Socket[] */
     private array $sockets = [];
-    /** @var string[] */
+    /** @var string[]|int[] */
     private array $socketBuffer = [];
 
     /** @var int */
@@ -225,11 +225,14 @@ class ProxyServer
     private function onSocketReceive(int $socketId): void
     {
         if (isset($this->socketBuffer[$socketId])) {
-            /** @var int $length */
             [$length, $buffer] = $this->socketBuffer[$socketId];
 
             $rawFrameData = $this->get($socketId, $length, $buffer);
         } elseif (($rawFrameLength = $this->get($socketId, 4)) !== null) {
+            if ($rawFrameLength === '') {
+                return; // frame is incomplete
+            }
+
             try {
                 $packetLength = Binary::readInt($rawFrameLength);
             } catch (BinaryDataException $exception) {
