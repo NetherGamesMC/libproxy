@@ -208,6 +208,10 @@ class ProxyServer
 
                     $this->logger->debug('Socket(' . $socketId . ') created a session from ' . $ip . ':' . $port);
 
+                    socket_set_option($socket, SOL_SOCKET, SO_LINGER, ["l_onoff" => 1, "l_linger" => 0]);
+                    socket_set_option($socket, SOL_SOCKET, SO_SNDTIMEO, ["sec" => 4, "usec" => 0]);
+                    socket_set_option($socket, SOL_SOCKET, SO_RCVTIMEO, ["sec" => 4, "usec" => 0]);
+
                     $pk = new LoginPacket();
                     $pk->ip = $ip;
                     $pk->port = $port;
