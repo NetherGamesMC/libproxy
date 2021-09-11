@@ -13,12 +13,12 @@ jobs:
       - name: Download PHP Release
         uses: dsaltares/fetch-gh-release-asset@0.06
         with:
-          file: PHP_Linux.tar.gz
+          file: Linux.zip
           repo: NetherGamesMC/php-build-scripts
           version: "tags/8.0"
           token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Untar PHP Release
-        run: tar -xzvf PHP_Linux.tar.gz
+      - name: Unpack PHP Release
+        run: unzip Linux.zip && tar -xzvf PHP_Linux-x86_64.tar.gz
       - name: Download Composer
         run: curl -o composer.phar "https://getcomposer.org/composer-stable.phar"
       - name: Checkout NGEssentials
