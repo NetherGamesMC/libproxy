@@ -18,6 +18,7 @@ use pocketmine\network\PacketHandlingException;
 use pocketmine\snooze\SleeperNotifier;
 use pocketmine\utils\Binary;
 use pocketmine\utils\BinaryDataException;
+use pocketmine\utils\Utils;
 use Socket;
 use Threaded;
 use ThreadedLogger;
@@ -294,7 +295,13 @@ class ProxyServer
 
         try {
             $length = min(self::MAX_FRAME_LENGTH, $remainingLength);
-            $receivedLength = socket_recv($socket, $buffer, $length, MSG_DONTWAIT);
+            if (Utils::getOS() === Utils::OS_WINDOWS) {
+                // Honestly I do not think this is a problem since we are not going to deploy
+                // windows as our "production" nodes.
+                $receivedLength = socket_recv($socket, $buffer, $length, MSG_WAITALL);
+            } else {
+                $receivedLength = socket_recv($socket, $buffer, $length, MSG_DONTWAIT);
+            }
 
             if ($receivedLength === false) {
                 return null;
