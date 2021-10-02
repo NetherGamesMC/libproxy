@@ -26,6 +26,7 @@ use pocketmine\Server;
 use pocketmine\snooze\SleeperNotifier;
 use pocketmine\utils\Binary;
 use pocketmine\utils\BinaryDataException;
+use pocketmine\utils\TextFormat;
 use pocketmine\utils\Utils;
 use RuntimeException;
 use Socket;
@@ -127,7 +128,7 @@ final class ProxyNetworkInterface implements NetworkInterface
                 $pk->decode($stream);
             } catch (BinaryDataException $e) {
                 $this->server->getLogger()->debug('Closed socket with id(' . $socketId . ') because packet was invalid.');
-                $this->close($socketId);
+                $this->close($socketId, 'Invalid Packet');
                 return;
             }
 
@@ -151,7 +152,7 @@ final class ProxyNetworkInterface implements NetworkInterface
                         if ($this->getSession($socketId) === null) {
                             throw new PacketHandlingException('Socket with id (' . $socketId . ") doesn't have a session.");
                         } else {
-                            $this->close($socketId, false);
+                            $this->close($socketId);
                         }
                         break;
                     case ForwardPacket::NETWORK_ID:
@@ -164,12 +165,12 @@ final class ProxyNetworkInterface implements NetworkInterface
                         break;
                 }
             } catch (PacketHandlingException $exception) {
-                $this->close($socketId);
+                $this->close($socketId, 'Error handling a Packet');
             }
         }
     }
 
-    public function close(int $socketId, bool $notify = true): void
+    public function close(int $socketId, string $reason = TextFormat::EOL): void
     {
         if (($session = $this->getSession($socketId)) !== null) {
             $session->onClientDisconnect('Socket disconnect');
@@ -177,8 +178,11 @@ final class ProxyNetworkInterface implements NetworkInterface
 
         unset($this->sessions[$socketId]);
 
-        if ($notify) {
-            $this->putPacket($socketId, new DisconnectPacket());
+        if ($reason !== TextFormat::EOL) {
+            $pk = new DisconnectPacket();
+            $pk->reason = $reason;
+
+            $this->putPacket($socketId, $pk);
         }
     }
 

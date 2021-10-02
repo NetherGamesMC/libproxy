@@ -40,7 +40,7 @@ class ProxyPacketSender implements PacketSender
     {
         if (!$this->closed) {
             $this->closed = true;
-            $this->handler->close($this->socketId);
+            $this->handler->close($this->socketId, $reason);
         }
     }
 }

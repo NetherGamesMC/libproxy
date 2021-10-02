@@ -18,6 +18,7 @@ use pocketmine\network\PacketHandlingException;
 use pocketmine\snooze\SleeperNotifier;
 use pocketmine\utils\Binary;
 use pocketmine\utils\BinaryDataException;
+use pocketmine\utils\TextFormat;
 use pocketmine\utils\Utils;
 use Socket;
 use Threaded;
@@ -129,7 +130,7 @@ class ProxyServer
                     $pk->decode($stream);
                 } catch (BinaryDataException $e) {
                     $this->logger->debug('Closed socket with id(' . $socketId . ') because packet was invalid.');
-                    $this->closeSocket($socketId);
+                    $this->closeSocket($socketId, 'Invalid Packet');
                     return;
                 }
 
@@ -138,7 +139,7 @@ class ProxyServer
                         case DisconnectPacket::NETWORK_ID:
                             /** @var DisconnectPacket $pk */
                             if ($this->getSocket($socketId) !== null) {
-                                $this->closeSocket($socketId, false);
+                                $this->closeSocket($socketId);
                             }
                             break;
                         case ForwardPacket::NETWORK_ID:
@@ -157,13 +158,13 @@ class ProxyServer
                             break;
                     }
                 } catch (PacketHandlingException $exception) {
-                    $this->closeSocket($socketId);
+                    $this->closeSocket($socketId, 'Error handling a Packet');
                 }
             }
         }
     }
 
-    private function closeSocket(int $socketId, bool $notify = true): void
+    private function closeSocket(int $socketId, string $reason = TextFormat::EOL): void
     {
         if (($socket = $this->getSocket($socketId)) !== null) {
             try {
@@ -177,8 +178,11 @@ class ProxyServer
 
         $this->logger->debug("Disconnected socket with id " . $socketId);
 
-        if ($notify) {
-            $this->putPacket($socketId, new DisconnectPacket());
+        if ($reason !== TextFormat::EOL) {
+            $pk = new DisconnectPacket();
+            $pk->reason = $reason;
+
+            $this->putPacket($socketId, $pk);
         }
     }
 
@@ -243,14 +247,14 @@ class ProxyServer
             try {
                 $packetLength = Binary::readInt($rawFrameLength);
             } catch (BinaryDataException $exception) {
-                $this->closeSocket($socketId);
+                $this->closeSocket($socketId, 'Not enough bytes to read');
                 $this->logger->logException($exception);
                 return;
             }
 
             $rawFrameData = $this->get($socketId, $packetLength);
         } else {
-            $this->closeSocket($socketId);
+            $this->closeSocket($socketId, 'Invalid frame length');
             $this->logger->debug('Socket(' . $socketId . ') returned invalid frame data length');
             return;
         }
@@ -260,7 +264,7 @@ class ProxyServer
         }
 
         if ($rawFrameData === null) {
-            $this->closeSocket($socketId);
+            $this->closeSocket($socketId, 'Invalid frame length');
             $this->logger->debug('Socket(' . $socketId . ') returned invalid frame data');
         } else {
             unset($this->socketBuffer[$socketId]);
@@ -268,12 +272,12 @@ class ProxyServer
             if ($this->asyncDecompress) {
                 try {
                     if (($payload = zstd_uncompress($rawFrameData)) === false) {
-                        $this->closeSocket($socketId);
+                        $this->closeSocket($socketId, 'Decompression error');
                         $this->logger->emergency('Socket with id (' . $socketId . ') data could not be decompressed.');
                         return;
                     }
                 } catch (ErrorException $exception) {
-                    $this->closeSocket($socketId);
+                    $this->closeSocket($socketId, 'Decompression error');
                     $this->logger->debug('Socket with id (' . $socketId . ') data could not be decompressed.');
                     return;
                 }
