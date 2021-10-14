@@ -35,7 +35,6 @@ use function socket_shutdown;
 use function socket_strerror;
 use function socket_write;
 use function strlen;
-use function zstd_uncompress;
 
 class ProxyServer
 {
@@ -53,8 +52,6 @@ class ProxyServer
     private PthreadsChannelReader $mainToThreadReader;
     /** @var SnoozeAwarePthreadsChannelWriter */
     private SnoozeAwarePthreadsChannelWriter $threadToMainWriter;
-    /** @var bool */
-    private bool $asyncDecompress;
 
     /** @var Socket */
     private Socket $serverSocket;
@@ -69,12 +66,11 @@ class ProxyServer
     /** @var int */
     private int $socketId = 0;
 
-    public function __construct(ThreadedLogger $logger, Socket $serverSocket, Threaded $mainToThreadBuffer, Threaded $threadToMainBuffer, SleeperNotifier $notifier, Socket $notifySocket, bool $asyncDecompress)
+    public function __construct(ThreadedLogger $logger, Socket $serverSocket, Threaded $mainToThreadBuffer, Threaded $threadToMainBuffer, SleeperNotifier $notifier, Socket $notifySocket)
     {
         $this->logger = $logger;
         $this->serverSocket = $serverSocket;
         $this->notifySocket = $notifySocket;
-        $this->asyncDecompress = $asyncDecompress;
 
         $this->mainToThreadReader = new PthreadsChannelReader($mainToThreadBuffer);
         $this->threadToMainWriter = new SnoozeAwarePthreadsChannelWriter($threadToMainBuffer, $notifier);
@@ -269,24 +265,8 @@ class ProxyServer
         } else {
             unset($this->socketBuffer[$socketId]);
 
-            if ($this->asyncDecompress) {
-                try {
-                    if (($payload = zstd_uncompress($rawFrameData)) === false) {
-                        $this->closeSocket($socketId, 'Decompression error');
-                        $this->logger->emergency('Socket with id (' . $socketId . ') data could not be decompressed.');
-                        return;
-                    }
-                } catch (ErrorException $exception) {
-                    $this->closeSocket($socketId, 'Decompression error');
-                    $this->logger->debug('Socket with id (' . $socketId . ') data could not be decompressed.');
-                    return;
-                }
-            } else {
-                $payload = $rawFrameData;
-            }
-
             $pk = new ForwardPacket();
-            $pk->payload = $payload;
+            $pk->payload = $rawFrameData;
 
             $this->putPacket($socketId, $pk);
         }

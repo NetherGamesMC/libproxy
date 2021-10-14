@@ -9,48 +9,53 @@ namespace libproxy;
 use ErrorException;
 use pocketmine\network\mcpe\compression\Compressor;
 use pocketmine\network\mcpe\compression\DecompressionException;
+use pocketmine\network\mcpe\compression\ZlibCompressor;
 use pocketmine\utils\AssumptionFailedError;
 use pocketmine\utils\Binary;
+use pocketmine\utils\BinaryDataException;
+use pocketmine\utils\BinaryStream;
 use pocketmine\utils\SingletonTrait;
 use function strlen;
 use function zstd_compress;
 use function zstd_uncompress;
 
-class ZstdCompressor implements Compressor
+class MultiCompressor implements Compressor
 {
     public const ZSTD_COMPRESSION_LEVEL = -1;
 
-    /** @var bool */
-    private bool $asyncDecompress;
+    public const METHOD_ZLIB = 0x00;
+    public const METHOD_ZSTD = 0x01;
 
     use SingletonTrait;
-
-    public function __construct(bool $asyncDecompress = false)
-    {
-        $this->asyncDecompress = $asyncDecompress;
-    }
 
     public function willCompress(string $data): bool
     {
         return true;
     }
 
-    /**
-     * Decompression is done on the main thread normally, we're decompressing this on the proxy thread when async is enabled
-     *
-     * @param string $payload
-     * @return string
-     */
     public function decompress(string $payload): string
     {
-        if ($this->asyncDecompress) {
-            return $payload;
-        }
+        $stream = new BinaryStream($payload);
 
         try {
-            $result = zstd_uncompress($payload);
-        } catch (ErrorException $exception) {
-            throw new DecompressionException('Failed to decompress data', 0, $exception);
+            $method = $stream->getByte();
+
+            try {
+                switch ($method) {
+                    case self::METHOD_ZLIB:
+                        $result = ZlibCompressor::getInstance()->decompress($stream->getRemaining());
+                        break;
+                    case self::METHOD_ZSTD:
+                        $result = zstd_uncompress($stream->getRemaining());
+                        break;
+                    default:
+                        throw new DecompressionException("Decompression method not found");
+                }
+            } catch (ErrorException $exception) {
+                throw new DecompressionException('Failed to decompress data', 0, $exception);
+            }
+        } catch (BinaryDataException $exception) {
+            throw new DecompressionException("Decompression method is invalid");
         }
 
         if ($result === false) {

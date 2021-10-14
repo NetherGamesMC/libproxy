@@ -58,16 +58,13 @@ class ProxyThread extends Thread
     private string $serverIp;
     /** @var int */
     private int $serverPort;
-    /** @var bool */
-    private bool $asyncDecompress;
 
-    public function __construct(string $serverIp, int $serverPort, ThreadedLogger $logger, Threaded $mainToThreadBuffer, Threaded $threadToMainBuffer, SleeperNotifier $notifier, Socket $notifySocket, bool $asyncDecompress)
+    public function __construct(string $serverIp, int $serverPort, ThreadedLogger $logger, Threaded $mainToThreadBuffer, Threaded $threadToMainBuffer, SleeperNotifier $notifier, Socket $notifySocket)
     {
         $this->serverIp = $serverIp;
         $this->serverPort = $serverPort;
         $this->logger = $logger;
         $this->notifySocket = $notifySocket;
-        $this->asyncDecompress = $asyncDecompress;
 
         $this->mainToThreadBuffer = $mainToThreadBuffer;
         $this->threadToMainBuffer = $threadToMainBuffer;
@@ -135,7 +132,6 @@ class ProxyThread extends Thread
                 $this->threadToMainBuffer,
                 $this->notifier,
                 $this->notifySocket,
-                $this->asyncDecompress
             );
 
             $this->synchronized(function (): void {
