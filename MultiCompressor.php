@@ -41,16 +41,11 @@ class MultiCompressor implements Compressor
             $method = $stream->getByte();
 
             try {
-                switch ($method) {
-                    case self::METHOD_ZLIB:
-                        $result = ZlibCompressor::getInstance()->decompress($stream->getRemaining());
-                        break;
-                    case self::METHOD_ZSTD:
-                        $result = zstd_uncompress($stream->getRemaining());
-                        break;
-                    default:
-                        throw new DecompressionException("Decompression method not found");
-                }
+                $result = match ($method) {
+                    self::METHOD_ZLIB => ZlibCompressor::getInstance()->decompress($stream->getRemaining()),
+                    self::METHOD_ZSTD => zstd_uncompress($stream->getRemaining()),
+                    default => throw new DecompressionException("Decompression method not found"),
+                };
             } catch (ErrorException $exception) {
                 throw new DecompressionException('Failed to decompress data', 0, $exception);
             }
