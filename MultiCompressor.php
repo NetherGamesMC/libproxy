@@ -69,7 +69,7 @@ class MultiCompressor implements Compressor
      */
     public function compress(string $payload): string
     {
-        $result = zstd_compress($payload, self::ZSTD_COMPRESSION_LEVEL);
+        $result = ZlibCompressor::getInstance()->compress($payload);
 
         if ($result === false) {
             throw new AssumptionFailedError("ZSTD compression failed");
