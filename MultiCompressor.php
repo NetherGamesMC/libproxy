@@ -69,8 +69,6 @@ class MultiCompressor implements Compressor
      */
     public function compress(string $payload): string
     {
-        $result = ZlibCompressor::getInstance()->compress($payload);
-
-        return $result;
+        return ZlibCompressor::getInstance()->compress($payload);
     }
 }
