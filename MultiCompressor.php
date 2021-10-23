@@ -71,6 +71,6 @@ class MultiCompressor implements Compressor
     {
         $result = ZlibCompressor::getInstance()->compress($payload);
 
-        return Binary::writeInt(strlen($payload)) . $result;
+        return $result;
     }
 }
