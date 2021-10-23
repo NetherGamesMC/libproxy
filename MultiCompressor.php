@@ -71,10 +71,6 @@ class MultiCompressor implements Compressor
     {
         $result = ZlibCompressor::getInstance()->compress($payload);
 
-        if ($result === false) {
-            throw new AssumptionFailedError("ZSTD compression failed");
-        }
-
         return Binary::writeInt(strlen($payload)) . $result;
     }
 }
