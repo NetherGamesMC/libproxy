@@ -5,10 +5,10 @@ declare(strict_types=1);
 
 namespace libproxy;
 
-
 use pocketmine\event\Listener;
 use pocketmine\event\server\DataPacketReceiveEvent;
 use pocketmine\network\mcpe\protocol\NetworkStackLatencyPacket;
+use pocketmine\network\mcpe\protocol\TickSyncPacket;
 
 class ProxyListener implements Listener
 {
@@ -30,6 +30,11 @@ class ProxyListener implements Listener
                 }
                 $event->cancel();
             }
+        }
+
+        if($packet->pid() === TickSyncPacket::NETWORK_ID){
+            /** @var TickSyncPacket $packet */
+            $origin->updatePing($packet->getClientSendTime() + $packet->getServerReceiveTime());
         }
     }
 }
