@@ -7,6 +7,8 @@ namespace libproxy;
 
 use Error;
 use Exception;
+use libproxy\data\LatencyData;
+use libproxy\data\TickSyncPacket;
 use libproxy\protocol\DisconnectPacket;
 use libproxy\protocol\ForwardPacket;
 use libproxy\protocol\LoginPacket;
@@ -31,6 +33,7 @@ use pocketmine\utils\Utils;
 use RuntimeException;
 use Socket;
 use Threaded;
+use WeakMap;
 use function bin2hex;
 use function socket_close;
 use function socket_create_pair;
@@ -44,6 +47,8 @@ use const SOCK_STREAM;
 
 final class ProxyNetworkInterface implements NetworkInterface
 {
+    /** @var WeakMap<NetworkSession, LatencyData> */
+    public static WeakMap $latencyMap;
 
     /** @var Server */
     private Server $server;
@@ -66,6 +71,8 @@ final class ProxyNetworkInterface implements NetworkInterface
         $server = $plugin->getServer();
 
         if (socket_create_pair(Utils::getOS() === Utils::OS_LINUX ? AF_UNIX : AF_INET, SOCK_STREAM, 0, $pair)) {
+            self::$latencyMap = new WeakMap();
+
             /** @var Socket $threadNotifier */
             /** @var Socket $threadNotification */
             [$threadNotifier, $threadNotification] = $pair;
@@ -89,6 +96,8 @@ final class ProxyNetworkInterface implements NetworkInterface
 
             $this->mainToThreadWriter = new PthreadsChannelWriter($mainToThreadBuffer);
             $this->threadToMainReader = new PthreadsChannelReader($threadToMainBuffer);
+
+            PacketPool::getInstance()->registerPacket(new TickSyncPacket());
 
             $server->getPluginManager()->registerEvents(new ProxyListener(), $plugin);
         } else {
@@ -244,5 +253,17 @@ final class ProxyNetworkInterface implements NetworkInterface
         $this->proxy->quit();
 
         socket_close($this->threadNotifier);
+    }
+
+    public static function handleRawLatency(NetworkSession $session, int $upstream, int $downstream): void
+    {
+        self::$latencyMap[$session] = $data = new LatencyData($upstream, $downstream);
+
+        $session->updatePing($data->getLatency());
+    }
+
+    public static function getLatencyData(NetworkSession $session): ?LatencyData
+    {
+        return self::$latencyMap[$session] ?? null;
     }
 }

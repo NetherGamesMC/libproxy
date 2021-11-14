@@ -31,10 +31,5 @@ class ProxyListener implements Listener
                 $event->cancel();
             }
         }
-
-        if($packet->pid() === TickSyncPacket::NETWORK_ID){
-            /** @var TickSyncPacket $packet */
-            $origin->updatePing($packet->getClientSendTime() + $packet->getServerReceiveTime());
-        }
     }
 }
