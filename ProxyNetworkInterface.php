@@ -29,7 +29,6 @@ use pocketmine\snooze\SleeperNotifier;
 use pocketmine\utils\Binary;
 use pocketmine\utils\BinaryDataException;
 use pocketmine\utils\TextFormat;
-use pocketmine\utils\Utils;
 use RuntimeException;
 use Socket;
 use Threaded;
@@ -37,9 +36,12 @@ use WeakMap;
 use function bin2hex;
 use function socket_close;
 use function socket_create_pair;
+use function socket_last_error;
+use function socket_strerror;
 use function socket_write;
 use function strlen;
 use function substr;
+use function trim;
 use const AF_INET;
 use const AF_UNIX;
 use const PTHREADS_INHERIT_CONSTANTS;
@@ -70,39 +72,43 @@ final class ProxyNetworkInterface implements NetworkInterface
     {
         $server = $plugin->getServer();
 
-        if (socket_create_pair(Utils::getOS() === Utils::OS_LINUX ? AF_UNIX : AF_INET, SOCK_STREAM, 0, $pair)) {
-            self::$latencyMap = new WeakMap();
-
-            /** @var Socket $threadNotifier */
-            /** @var Socket $threadNotification */
-            [$threadNotifier, $threadNotification] = $pair;
-            $this->threadNotifier = $threadNotifier;
-
-            $this->server = $server;
-            $this->notifier = new SleeperNotifier();
-
-            $mainToThreadBuffer = new Threaded();
-            $threadToMainBuffer = new Threaded();
-
-            $this->proxy = new ProxyThread(
-                $server->getIp(),
-                $port,
-                $server->getLogger(),
-                $mainToThreadBuffer,
-                $threadToMainBuffer,
-                $this->notifier,
-                $threadNotification,
-            );
-
-            $this->mainToThreadWriter = new PthreadsChannelWriter($mainToThreadBuffer);
-            $this->threadToMainReader = new PthreadsChannelReader($threadToMainBuffer);
-
-            PacketPool::getInstance()->registerPacket(new TickSyncPacket());
-
-            $server->getPluginManager()->registerEvents(new ProxyListener(), $plugin);
-        } else {
-            $server->getLogger()->emergency('Notifier Socket could not be created');
+        $ret = @socket_create_pair(AF_UNIX, SOCK_STREAM, 0, $ipc);
+        if (!$ret) {
+            $err = socket_last_error();
+            if (($err !== SOCKET_EPROTONOSUPPORT && $err !== SOCKET_ENOPROTOOPT) || !@socket_create_pair(AF_INET, SOCK_STREAM, 0, $ipc)) {
+                throw new Exception('Failed to open IPC socket: ' . trim(socket_strerror(socket_last_error())));
+            }
         }
+
+        self::$latencyMap = new WeakMap();
+
+        /** @var Socket $threadNotifier */
+        /** @var Socket $threadNotification */
+        [$threadNotifier, $threadNotification] = $ipc;
+        $this->threadNotifier = $threadNotifier;
+
+        $this->server = $server;
+        $this->notifier = new SleeperNotifier();
+
+        $mainToThreadBuffer = new Threaded();
+        $threadToMainBuffer = new Threaded();
+
+        $this->proxy = new ProxyThread(
+            $server->getIp(),
+            $port,
+            $server->getLogger(),
+            $mainToThreadBuffer,
+            $threadToMainBuffer,
+            $this->notifier,
+            $threadNotification,
+        );
+
+        $this->mainToThreadWriter = new PthreadsChannelWriter($mainToThreadBuffer);
+        $this->threadToMainReader = new PthreadsChannelReader($threadToMainBuffer);
+
+        PacketPool::getInstance()->registerPacket(new TickSyncPacket());
+
+        $server->getPluginManager()->registerEvents(new ProxyListener(), $plugin);
     }
 
     public function start(): void
