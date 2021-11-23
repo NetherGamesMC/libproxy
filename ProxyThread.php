@@ -6,6 +6,7 @@ declare(strict_types=1);
 namespace libproxy;
 
 
+use NetherGames\NGEssentials\thread\NGClassLoader;
 use pocketmine\snooze\SleeperNotifier;
 use pocketmine\thread\Thread;
 use RuntimeException;
@@ -34,6 +35,8 @@ use const SOL_TCP;
 
 class ProxyThread extends Thread
 {
+    use NGClassLoader;
+
     /** @var string|null */
     public ?string $crashInfo = null;
     /** @var ThreadedLogger */
