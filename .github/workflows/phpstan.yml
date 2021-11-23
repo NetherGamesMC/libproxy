@@ -21,6 +21,13 @@ jobs:
         run: unzip Linux.zip && tar -xzvf PHP_Linux-x86_64.tar.gz
       - name: Download Composer
         run: curl -o composer.phar "https://getcomposer.org/composer-stable.phar"
+      - name: Checkout NGEssentials
+        uses: actions/checkout@v2.3.4
+        with:
+          repository: NetherGamesMC/NGEssentials
+          token: ${{ secrets.ng_token }}
+          submodules: true
+          path: NGEssentials
       - name: Checkout PharBuilder
         uses: actions/checkout@v2.3.4
         with:
