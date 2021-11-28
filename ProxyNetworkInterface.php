@@ -80,6 +80,7 @@ final class ProxyNetworkInterface implements NetworkInterface
             }
         }
 
+        /** @phpstan-ignore-next-line */
         self::$latencyMap = new WeakMap();
 
         /** @var Socket $threadNotifier */

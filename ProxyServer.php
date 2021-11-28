@@ -96,7 +96,6 @@ class ProxyServer
         $write = null;
         $except = null;
 
-        /** @phpstan-ignore-next-line */
         $select = socket_select($read, $write, $except, 5);
         if ($select !== false && $select > 0) {
             foreach ($read as $socketId => $socket) {
