@@ -256,10 +256,12 @@ final class ProxyNetworkInterface implements NetworkInterface
 
     public function shutdown(): void
     {
-        $this->server->getTickSleeper()->removeNotifier($this->notifier);
+        $this->proxy->shutdown();
+        socket_write($this->threadNotifier, "\x00");
         $this->proxy->quit();
 
-        socket_close($this->threadNotifier);
+        @socket_close($this->threadNotifier);
+        $this->server->getTickSleeper()->removeNotifier($this->notifier);
     }
 
     public static function handleRawLatency(NetworkSession $session, int $upstream, int $downstream): void

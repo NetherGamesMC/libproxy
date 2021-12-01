@@ -80,14 +80,16 @@ class ProxyThread extends Thread
      */
     public function shutdownHandler(): void
     {
-        if ($this->cleanShutdown !== true) {
+        if ($this->cleanShutdown) {
+            $this->logger->info('Graceful shutdown complete');
+        } else {
             $error = error_get_last();
 
-            if ($error !== null) {
+            if ($error === null) {
+                $this->logger->emergency('Proxy shutdown unexpectedly');
+            } else {
                 $this->logger->emergency('Fatal error: ' . $error['message'] . ' in ' . $error['file'] . ' on line ' . $error['line']);
                 $this->setCrashInfo($error['message']);
-            } else {
-                $this->logger->emergency('Proxy shutdown unexpectedly');
             }
         }
     }
@@ -103,6 +105,11 @@ class ProxyThread extends Thread
     public function getCrashInfo(): ?string
     {
         return $this->crashInfo;
+    }
+
+    public function shutdown(): void
+    {
+        $this->isKilled = true;
     }
 
     public function startAndWait(int $options = PTHREADS_INHERIT_NONE): void

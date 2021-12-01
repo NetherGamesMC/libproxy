@@ -23,6 +23,7 @@ use pocketmine\utils\Utils;
 use Socket;
 use Threaded;
 use ThreadedLogger;
+use function count;
 use function min;
 use function socket_accept;
 use function socket_close;
@@ -78,13 +79,16 @@ class ProxyServer
 
     public function waitShutdown(): void
     {
-        $this->tickProcessor();
-
-        foreach ($this->sockets as $socket) {
-            socket_close($socket);
+        foreach($this->sockets as $socketId => $socket){
+            $this->closeSocket($socketId, "server shutdown");
         }
-        socket_close($this->serverSocket);
-        socket_close($this->notifySocket);
+
+        while(count($this->sockets) > 0){
+            $this->tickProcessor();
+        }
+
+        @socket_close($this->serverSocket);
+        @socket_close($this->notifySocket);
     }
 
     public function tickProcessor(): void
