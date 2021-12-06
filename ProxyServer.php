@@ -124,41 +124,41 @@ class ProxyServer
 
             if (($pk = ProxyPacketPool::getInstance()->getPacket($payload, $stream->getOffset())) === null) {
                 throw new PacketHandlingException('Packet does not exist');
-            } else {
-                try {
-                    $pk->decode($stream);
-                } catch (BinaryDataException $e) {
-                    $this->logger->debug('Closed socket with id(' . $socketId . ') because packet was invalid.');
-                    $this->closeSocket($socketId, 'Invalid Packet');
-                    return;
-                }
+            }
 
-                try {
-                    switch ($pk->pid()) {
-                        case DisconnectPacket::NETWORK_ID:
-                            /** @var DisconnectPacket $pk */
-                            if ($this->getSocket($socketId) !== null) {
-                                $this->closeSocket($socketId);
+            try {
+                $pk->decode($stream);
+            } catch (BinaryDataException $e) {
+                $this->logger->debug('Closed socket with id(' . $socketId . ') because packet was invalid.');
+                $this->closeSocket($socketId, 'Invalid Packet');
+                return;
+            }
+
+            try {
+                switch ($pk->pid()) {
+                    case DisconnectPacket::NETWORK_ID:
+                        /** @var DisconnectPacket $pk */
+                        if ($this->getSocket($socketId) !== null) {
+                            $this->closeSocket($socketId);
+                        }
+                        break;
+                    case ForwardPacket::NETWORK_ID:
+                        /** @var ForwardPacket $pk */
+                        if (($socket = $this->getSocket($socketId)) === null) {
+                            throw new PacketHandlingException('Socket with id (' . $socketId . ") doesn't exist.");
+                        }
+
+                        try {
+                            if (socket_write($socket, Binary::writeInt(strlen($pk->payload)) . $pk->payload) === false) {
+                                throw new PacketHandlingException('Socket with id (' . $socketId . ") isn't writable.");
                             }
-                            break;
-                        case ForwardPacket::NETWORK_ID:
-                            /** @var ForwardPacket $pk */
-                            if (($socket = $this->getSocket($socketId)) === null) {
-                                throw new PacketHandlingException('Socket with id (' . $socketId . ") doesn't exist.");
-                            } else {
-                                try {
-                                    if (socket_write($socket, Binary::writeInt(strlen($pk->payload)) . $pk->payload) === false) {
-                                        throw new PacketHandlingException('Socket with id (' . $socketId . ") isn't writable.");
-                                    }
-                                } catch (ErrorException $exception) {
-                                    throw PacketHandlingException::wrap($exception, 'Socket with id (' . $socketId . ") isn't writable.");
-                                }
-                            }
-                            break;
-                    }
-                } catch (PacketHandlingException $exception) {
-                    $this->closeSocket($socketId, 'Error handling a Packet');
+                        } catch (ErrorException $exception) {
+                            throw PacketHandlingException::wrap($exception, 'Socket with id (' . $socketId . ") isn't writable.");
+                        }
+                        break;
                 }
+            } catch (PacketHandlingException $exception) {
+                $this->closeSocket($socketId, 'Error handling a Packet');
             }
         }
     }

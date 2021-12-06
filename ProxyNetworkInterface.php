@@ -24,6 +24,7 @@ use pocketmine\network\mcpe\raklib\RakLibInterface;
 use pocketmine\network\NetworkInterface;
 use pocketmine\network\PacketHandlingException;
 use pocketmine\plugin\PluginBase;
+use pocketmine\scheduler\ClosureTask;
 use pocketmine\Server;
 use pocketmine\snooze\SleeperNotifier;
 use pocketmine\utils\Binary;
@@ -64,6 +65,11 @@ final class ProxyNetworkInterface implements NetworkInterface
     private PthreadsChannelWriter $mainToThreadWriter;
     /** @var PthreadsChannelReader */
     private PthreadsChannelReader $threadToMainReader;
+
+    /** @var int */
+    private int $receiveBytes = 0;
+    /** @var int */
+    private int $sendBytes = 0;
 
     /** @var NetworkSession[] */
     private array $sessions = [];
@@ -109,6 +115,13 @@ final class ProxyNetworkInterface implements NetworkInterface
 
         PacketPool::getInstance()->registerPacket(new TickSyncPacket());
 
+        $bandwidthTracker = $plugin->getServer()->getNetwork()->getBandwidthTracker();
+        $plugin->getScheduler()->scheduleDelayedRepeatingTask(new ClosureTask(function () use ($bandwidthTracker): void {
+            $bandwidthTracker->add($this->sendBytes, $this->receiveBytes);
+            $this->sendBytes = 0;
+            $this->receiveBytes = 0;
+        }), 20, 20);
+
         $server->getPluginManager()->registerEvents(new ProxyListener(), $plugin);
     }
 
@@ -135,50 +148,51 @@ final class ProxyNetworkInterface implements NetworkInterface
         if (($pk = ProxyPacketPool::getInstance()->getPacket($buffer, $stream->getOffset())) === null) {
             $offset = 0;
             throw new PacketHandlingException('Proxy packet with id (' . Binary::readUnsignedVarInt($buffer, $offset) . ') does not exist');
-        } else {
-            try {
-                $pk->decode($stream);
-            } catch (BinaryDataException $e) {
-                $this->server->getLogger()->debug('Closed socket with id(' . $socketId . ') because packet was invalid.');
-                $this->close($socketId, 'Invalid Packet');
-                return;
-            }
+        }
 
-            if (!$stream->feof()) {
-                $remains = substr($stream->getBuffer(), $stream->getOffset());
-                $this->server->getLogger()->debug('Still ' . strlen($remains) . ' bytes unread in ' . $pk->pid() . ': ' . bin2hex($remains));
-            }
+        try {
+            $pk->decode($stream);
+        } catch (BinaryDataException $e) {
+            $this->server->getLogger()->debug('Closed socket with id(' . $socketId . ') because packet was invalid.');
+            $this->close($socketId, 'Invalid Packet');
+            return;
+        }
 
-            try {
-                switch ($pk->pid()) {
-                    case LoginPacket::NETWORK_ID:
-                        /** @var LoginPacket $pk */
-                        if ($this->getSession($socketId) === null) {
-                            $this->createSession($socketId, $pk->ip, $pk->port);
-                        } else {
-                            throw new PacketHandlingException('Socket with id (' . $socketId . ') already has a session.');
-                        }
-                        break;
-                    case DisconnectPacket::NETWORK_ID:
-                        /** @var DisconnectPacket $pk */
-                        if ($this->getSession($socketId) === null) {
-                            throw new PacketHandlingException('Socket with id (' . $socketId . ") doesn't have a session.");
-                        } else {
-                            $this->close($socketId);
-                        }
-                        break;
-                    case ForwardPacket::NETWORK_ID:
-                        /** @var ForwardPacket $pk */
-                        if (($session = $this->getSession($socketId)) === null) {
-                            throw new PacketHandlingException('Socket with id (' . $socketId . ") doesn't have a session.");
-                        } else {
-                            $session->handleEncoded($pk->payload);
-                        }
-                        break;
-                }
-            } catch (PacketHandlingException $exception) {
-                $this->close($socketId, 'Error handling a Packet');
+        if (!$stream->feof()) {
+            $remains = substr($stream->getBuffer(), $stream->getOffset());
+            $this->server->getLogger()->debug('Still ' . strlen($remains) . ' bytes unread in ' . $pk->pid() . ': ' . bin2hex($remains));
+        }
+
+        try {
+            switch ($pk->pid()) {
+                case LoginPacket::NETWORK_ID:
+                    /** @var LoginPacket $pk */
+                    if ($this->getSession($socketId) === null) {
+                        $this->createSession($socketId, $pk->ip, $pk->port);
+                    } else {
+                        throw new PacketHandlingException('Socket with id (' . $socketId . ') already has a session.');
+                    }
+                    break;
+                case DisconnectPacket::NETWORK_ID:
+                    /** @var DisconnectPacket $pk */
+                    if ($this->getSession($socketId) === null) {
+                        throw new PacketHandlingException('Socket with id (' . $socketId . ") doesn't have a session.");
+                    }
+
+                    $this->close($socketId);
+                    break;
+                case ForwardPacket::NETWORK_ID:
+                    /** @var ForwardPacket $pk */
+                    if (($session = $this->getSession($socketId)) === null) {
+                        throw new PacketHandlingException('Socket with id (' . $socketId . ") doesn't have a session.");
+                    }
+
+                    $session->handleEncoded($pk->payload);
+                    $this->receiveBytes += strlen($pk->payload);
+                    break;
             }
+        } catch (PacketHandlingException $exception) {
+            $this->close($socketId, 'Error handling a Packet');
         }
     }
 
@@ -211,6 +225,7 @@ final class ProxyNetworkInterface implements NetworkInterface
         $pk->encode($serializer);
 
         $this->mainToThreadWriter->write($serializer->getBuffer());
+        $this->sendBytes += strlen($serializer->getBuffer());
 
         try {
             socket_write($this->threadNotifier, "\x00"); // wakes up the socket_select function
