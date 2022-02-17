@@ -81,7 +81,7 @@ class ProxyThread extends Thread
     public function shutdownHandler(): void
     {
         if ($this->cleanShutdown) {
-            $this->logger->info('Graceful shutdown complete');
+            $this->logger->info('ProxyThread: Graceful shutdown complete');
         } else {
             $error = error_get_last();
 

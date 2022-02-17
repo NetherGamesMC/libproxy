@@ -15,16 +15,17 @@
     "repositories": [
         { "type": "vcs", "url": "git@github.com:NetherGamesMC/NGEssentials.git" },
         { "type": "vcs", "url": "git@github.com:NetherGamesMC/libAnticheat.git" },
-        { "type": "vcs", "url": "git@github.com:NetherGamesMC/libasyncio.git" },
-        { "type": "vcs", "url": "git@github.com:NetherGamesMC/libasynCurl.git" },
         { "type": "vcs", "url": "git@github.com:NetherGamesMC/libDiscord.git" },
+        { "type": "vcs", "url": "git@github.com:NetherGamesMC/libLogDNA.git" },
+        { "type": "vcs", "url": "git@github.com:NetherGamesMC/libPhysX.git" },
+        { "type": "vcs", "url": "git@github.com:NetherGamesMC/libReplay.git" },
+        { "type": "vcs", "url": "git@github.com:NetherGamesMC/libVanilla.git" },
+        { "type": "vcs", "url": "git@github.com:NetherGamesMC/libasynCurl.git" },
+        { "type": "vcs", "url": "git@github.com:NetherGamesMC/libasyncio.git" },
         { "type": "vcs", "url": "git@github.com:NetherGamesMC/libforms.git" },
         { "type": "vcs", "url": "git@github.com:NetherGamesMC/libminigames.git"},
         { "type": "vcs", "url": "git@github.com:NetherGamesMC/libnetsys.git" },
-        { "type": "vcs", "url": "git@github.com:NetherGamesMC/libPhysX.git" },
-        { "type": "vcs", "url": "git@github.com:NetherGamesMC/libproxy.git" },
-        { "type": "vcs", "url": "git@github.com:NetherGamesMC/libReplay.git" },
-        { "type": "vcs", "url": "git@github.com:NetherGamesMC/libVanilla.git" }
+        { "type": "vcs", "url": "git@github.com:NetherGamesMC/libproxy.git" }
     ],
     "autoload": {
         "psr-4": {
