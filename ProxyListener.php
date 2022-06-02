@@ -8,7 +8,6 @@ namespace libproxy;
 use pocketmine\event\Listener;
 use pocketmine\event\server\DataPacketReceiveEvent;
 use pocketmine\network\mcpe\protocol\NetworkStackLatencyPacket;
-use pocketmine\network\mcpe\protocol\TickSyncPacket;
 
 class ProxyListener implements Listener
 {

@@ -79,16 +79,53 @@ class ProxyServer
 
     public function waitShutdown(): void
     {
-        foreach($this->sockets as $socketId => $socket){
+        foreach ($this->sockets as $socketId => $socket) {
             $this->closeSocket($socketId, "server shutdown");
         }
 
-        while(count($this->sockets) > 0){
+        while (count($this->sockets) > 0) {
             $this->tickProcessor();
         }
 
         @socket_close($this->serverSocket);
         @socket_close($this->notifySocket);
+    }
+
+    private function closeSocket(int $socketId, string $reason = TextFormat::EOL): void
+    {
+        if (($socket = $this->getSocket($socketId)) !== null) {
+            try {
+                socket_shutdown($socket);
+            } catch (ErrorException $exception) {
+                $this->logger->debug('Socket is not connected anymore.');
+            }
+            socket_close($socket);
+            unset($this->sockets[$socketId], $this->socketBuffer[$socketId]);
+        }
+
+        $this->logger->debug("Disconnected socket with id " . $socketId);
+
+        if ($reason !== TextFormat::EOL) {
+            $pk = new DisconnectPacket();
+            $pk->reason = $reason;
+
+            $this->putPacket($socketId, $pk);
+        }
+    }
+
+    public function getSocket(int $socketId): ?Socket
+    {
+        return $this->sockets[$socketId] ?? null;
+    }
+
+    private function putPacket(int $socketId, ProxyPacket $pk): void
+    {
+        $serializer = new ProxyPacketSerializer();
+        $serializer->putLInt($socketId);
+
+        $pk->encode($serializer);
+
+        $this->threadToMainWriter->write($serializer->getBuffer());
     }
 
     public function tickProcessor(): void
@@ -161,43 +198,6 @@ class ProxyServer
                 $this->closeSocket($socketId, 'Error handling a Packet');
             }
         }
-    }
-
-    private function closeSocket(int $socketId, string $reason = TextFormat::EOL): void
-    {
-        if (($socket = $this->getSocket($socketId)) !== null) {
-            try {
-                socket_shutdown($socket);
-            } catch (ErrorException $exception) {
-                $this->logger->debug('Socket is not connected anymore.');
-            }
-            socket_close($socket);
-            unset($this->sockets[$socketId], $this->socketBuffer[$socketId]);
-        }
-
-        $this->logger->debug("Disconnected socket with id " . $socketId);
-
-        if ($reason !== TextFormat::EOL) {
-            $pk = new DisconnectPacket();
-            $pk->reason = $reason;
-
-            $this->putPacket($socketId, $pk);
-        }
-    }
-
-    public function getSocket(int $socketId): ?Socket
-    {
-        return $this->sockets[$socketId] ?? null;
-    }
-
-    private function putPacket(int $socketId, ProxyPacket $pk): void
-    {
-        $serializer = new ProxyPacketSerializer();
-        $serializer->putLInt($socketId);
-
-        $pk->encode($serializer);
-
-        $this->threadToMainWriter->write($serializer->getBuffer());
     }
 
     private function onServerSocketReceive(): void

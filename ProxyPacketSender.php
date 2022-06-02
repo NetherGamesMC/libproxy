@@ -8,8 +8,6 @@ namespace libproxy;
 
 use libproxy\protocol\ForwardPacket;
 use pocketmine\network\mcpe\PacketSender;
-use pocketmine\utils\Binary;
-use function strlen;
 
 class ProxyPacketSender implements PacketSender
 {

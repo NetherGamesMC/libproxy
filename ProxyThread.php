@@ -6,7 +6,7 @@ declare(strict_types=1);
 namespace libproxy;
 
 
-use NetherGames\NGEssentials\thread\NGClassLoader;
+use pocketmine\Server;
 use pocketmine\snooze\SleeperNotifier;
 use pocketmine\thread\Thread;
 use RuntimeException;
@@ -35,8 +35,6 @@ use const SOL_TCP;
 
 class ProxyThread extends Thread
 {
-    use NGClassLoader;
-
     /** @var string|null */
     public ?string $crashInfo = null;
     /** @var ThreadedLogger */
@@ -45,7 +43,6 @@ class ProxyThread extends Thread
     private bool $cleanShutdown = false;
     /** @var bool */
     private bool $ready = false;
-
 
     /** @var Threaded */
     private Threaded $mainToThreadBuffer;
@@ -73,6 +70,8 @@ class ProxyThread extends Thread
         $this->threadToMainBuffer = $threadToMainBuffer;
 
         $this->notifier = $notifier;
+
+        $this->setClassLoaders([Server::getInstance()->getLoader(), ]);
     }
 
     /**
@@ -81,7 +80,7 @@ class ProxyThread extends Thread
     public function shutdownHandler(): void
     {
         if ($this->cleanShutdown) {
-            $this->logger->info('ProxyThread: Graceful shutdown complete');
+            $this->logger->info('Proxy Thread: Graceful shutdown complete');
         } else {
             $error = error_get_last();
 

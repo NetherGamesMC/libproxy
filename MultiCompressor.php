@@ -10,13 +10,9 @@ use ErrorException;
 use pocketmine\network\mcpe\compression\Compressor;
 use pocketmine\network\mcpe\compression\DecompressionException;
 use pocketmine\network\mcpe\compression\ZlibCompressor;
-use pocketmine\utils\AssumptionFailedError;
-use pocketmine\utils\Binary;
 use pocketmine\utils\BinaryDataException;
 use pocketmine\utils\BinaryStream;
 use pocketmine\utils\SingletonTrait;
-use function strlen;
-use function zstd_compress;
 use function zstd_uncompress;
 
 class MultiCompressor implements Compressor

@@ -45,7 +45,10 @@ use function substr;
 use function trim;
 use const AF_INET;
 use const AF_UNIX;
+use const PTHREADS_INHERIT_ALL;
+use const PTHREADS_INHERIT_CLASSES;
 use const PTHREADS_INHERIT_CONSTANTS;
+use const PTHREADS_INHERIT_INCLUDES;
 use const SOCK_STREAM;
 
 final class ProxyNetworkInterface implements NetworkInterface
@@ -125,6 +128,18 @@ final class ProxyNetworkInterface implements NetworkInterface
         $server->getPluginManager()->registerEvents(new ProxyListener(), $plugin);
     }
 
+    public static function handleRawLatency(NetworkSession $session, int $upstream, int $downstream): void
+    {
+        self::$latencyMap[$session] = $data = new LatencyData($upstream, $downstream);
+
+        $session->updatePing($data->getLatency());
+    }
+
+    public static function getLatencyData(NetworkSession $session): ?LatencyData
+    {
+        return self::$latencyMap[$session] ?? null;
+    }
+
     public function start(): void
     {
         $this->server->getTickSleeper()->addNotifier($this->notifier, function (): void {
@@ -132,9 +147,9 @@ final class ProxyNetworkInterface implements NetworkInterface
                 $this->onPacketReceive($payload);
             }
         });
-        $this->server->getLogger()->debug('Waiting for NetSys to start...');
-        $this->proxy->startAndWait(PTHREADS_INHERIT_CONSTANTS); //HACK: MainLogger needs constants for exception logging
-        $this->server->getLogger()->debug('NetSys booted successfully');
+        $this->server->getLogger()->debug('Waiting for Proxy to start...');
+        $this->proxy->startAndWait(PTHREADS_INHERIT_CONSTANTS); //HACK: MainLogger needs constants for exception logging & Composer need classes
+        $this->server->getLogger()->debug('Proxy booted successfully');
     }
 
     /**
@@ -277,17 +292,5 @@ final class ProxyNetworkInterface implements NetworkInterface
 
         @socket_close($this->threadNotifier);
         $this->server->getTickSleeper()->removeNotifier($this->notifier);
-    }
-
-    public static function handleRawLatency(NetworkSession $session, int $upstream, int $downstream): void
-    {
-        self::$latencyMap[$session] = $data = new LatencyData($upstream, $downstream);
-
-        $session->updatePing($data->getLatency());
-    }
-
-    public static function getLatencyData(NetworkSession $session): ?LatencyData
-    {
-        return self::$latencyMap[$session] ?? null;
     }
 }
