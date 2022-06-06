@@ -35,6 +35,7 @@ use const SOL_TCP;
 
 class ProxyThread extends Thread
 {
+    public ?string $autoloaderPath = null;
     /** @var string|null */
     public ?string $crashInfo = null;
     /** @var ThreadedLogger */
@@ -59,8 +60,10 @@ class ProxyThread extends Thread
     /** @var int */
     private int $serverPort;
 
-    public function __construct(string $serverIp, int $serverPort, ThreadedLogger $logger, Threaded $mainToThreadBuffer, Threaded $threadToMainBuffer, SleeperNotifier $notifier, Socket $notifySocket)
+    public function __construct(?string $autoloaderPath, string $serverIp, int $serverPort, ThreadedLogger $logger, Threaded $mainToThreadBuffer, Threaded $threadToMainBuffer, SleeperNotifier $notifier, Socket $notifySocket)
     {
+        $this->autoloaderPath = $autoloaderPath;
+
         $this->serverIp = $serverIp;
         $this->serverPort = $serverPort;
         $this->logger = $logger;
@@ -71,7 +74,7 @@ class ProxyThread extends Thread
 
         $this->notifier = $notifier;
 
-        $this->setClassLoaders([Server::getInstance()->getLoader(), ]);
+        $this->setClassLoaders([Server::getInstance()->getLoader()]);
     }
 
     /**
@@ -126,6 +129,10 @@ class ProxyThread extends Thread
 
     protected function onRun(): void
     {
+        if ($this->autoloaderPath !== null) {
+            require $this->autoloaderPath;
+        }
+
         try {
             gc_enable();
             ini_set('display_errors', '1');

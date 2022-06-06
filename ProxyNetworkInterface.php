@@ -45,10 +45,7 @@ use function substr;
 use function trim;
 use const AF_INET;
 use const AF_UNIX;
-use const PTHREADS_INHERIT_ALL;
-use const PTHREADS_INHERIT_CLASSES;
 use const PTHREADS_INHERIT_CONSTANTS;
-use const PTHREADS_INHERIT_INCLUDES;
 use const SOCK_STREAM;
 
 final class ProxyNetworkInterface implements NetworkInterface
@@ -77,7 +74,7 @@ final class ProxyNetworkInterface implements NetworkInterface
     /** @var NetworkSession[] */
     private array $sessions = [];
 
-    public function __construct(PluginBase $plugin, int $port)
+    public function __construct(PluginBase $plugin, int $port, ?string $composerPath = null)
     {
         $server = $plugin->getServer();
 
@@ -104,6 +101,7 @@ final class ProxyNetworkInterface implements NetworkInterface
         $threadToMainBuffer = new Threaded();
 
         $this->proxy = new ProxyThread(
+            $composerPath,
             $server->getIp(),
             $port,
             $server->getLogger(),
