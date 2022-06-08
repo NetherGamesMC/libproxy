@@ -129,10 +129,6 @@ class ProxyThread extends Thread
 
     protected function onRun(): void
     {
-        if ($this->autoloaderPath !== null) {
-            require $this->autoloaderPath;
-        }
-
         try {
             gc_enable();
             ini_set('display_errors', '1');
@@ -140,6 +136,10 @@ class ProxyThread extends Thread
             ini_set('memory_limit', '512M');
 
             register_shutdown_function([$this, 'shutdownHandler']);
+
+            if ($this->autoloaderPath !== null) {
+                require $this->autoloaderPath;
+            }
 
             $proxy = new ProxyServer(
                 $this->logger,
