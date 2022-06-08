@@ -73,8 +73,6 @@ class ProxyThread extends Thread
         $this->threadToMainBuffer = $threadToMainBuffer;
 
         $this->notifier = $notifier;
-
-        $this->setClassLoaders([Server::getInstance()->getLoader()]);
     }
 
     /**

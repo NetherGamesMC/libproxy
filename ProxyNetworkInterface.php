@@ -146,7 +146,7 @@ final class ProxyNetworkInterface implements NetworkInterface
             }
         });
         $this->server->getLogger()->debug('Waiting for Proxy to start...');
-        $this->proxy->startAndWait(PTHREADS_INHERIT_CONSTANTS); //HACK: MainLogger needs constants for exception logging & Composer need classes
+        $this->proxy->startAndWait(PTHREADS_INHERIT_CONSTANTS); //HACK: MainLogger needs constants for exception logging
         $this->server->getLogger()->debug('Proxy booted successfully');
     }
 
