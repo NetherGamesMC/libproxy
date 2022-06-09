@@ -67,7 +67,7 @@ class MultiCompressor implements Compressor
      */
     public function compress(string $payload): string
     {
-        if (($size = strlen($payload)) >= ZlibCompressor::DEFAULT_MAX_DECOMPRESSION_SIZE) {
+        if (($size = strlen($payload)) >= (3.5 * 1024 * 1024)) {
             GlobalLogger::get()->alert("Payload exceed maximum safe decompression size, $size.");
             GlobalLogger::get()->logException(new RuntimeException());
         }
