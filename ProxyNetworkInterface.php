@@ -15,6 +15,7 @@ use libproxy\protocol\LoginPacket;
 use libproxy\protocol\ProxyPacket;
 use libproxy\protocol\ProxyPacketPool;
 use libproxy\protocol\ProxyPacketSerializer;
+use pocketmine\network\mcpe\handler\LoginPacketHandler;
 use pocketmine\network\mcpe\NetworkSession;
 use pocketmine\network\mcpe\protocol\PacketPool;
 use pocketmine\network\mcpe\protocol\ProtocolInfo;
@@ -23,6 +24,7 @@ use pocketmine\network\mcpe\raklib\PthreadsChannelWriter;
 use pocketmine\network\mcpe\raklib\RakLibInterface;
 use pocketmine\network\NetworkInterface;
 use pocketmine\network\PacketHandlingException;
+use pocketmine\player\PlayerInfo;
 use pocketmine\plugin\PluginBase;
 use pocketmine\scheduler\ClosureTask;
 use pocketmine\Server;
@@ -249,7 +251,7 @@ final class ProxyNetworkInterface implements NetworkInterface
 
     public function createSession(int $socketId, string $ip, int $port): NetworkSession
     {
-        return $this->sessions[$socketId] = new NetworkSession(
+        $session = new NetworkSession(
             $this->server,
             $this->server->getNetwork()->getSessionManager(),
             PacketPool::getInstance(),
@@ -259,6 +261,16 @@ final class ProxyNetworkInterface implements NetworkInterface
             $ip,
             $port
         );
+
+        $this->sessions[$socketId] = $session;
+
+        // Set the LoginPacketHandler, since compression is handled by the proxy
+        (function (): void {
+            /** @noinspection PhpUndefinedFieldInspection */
+            $this->onSessionStartSuccess();
+        })->call($session);
+
+        return $session;
     }
 
     public function setName(string $name): void
