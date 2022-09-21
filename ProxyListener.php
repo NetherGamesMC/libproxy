@@ -44,7 +44,7 @@ class ProxyListener implements Listener
                     false,
                     0,
                     0
-                ));
+                ), true);
 
                 $event->cancel();
                 break;
