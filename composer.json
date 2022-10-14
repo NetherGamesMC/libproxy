@@ -9,7 +9,7 @@
         "ext-pthreads": "*"
     },
     "require-dev": {
-        "phpstan/phpstan": "1.8.8"
+        "phpstan/phpstan": "1.8.9"
     },
     "autoload": {
         "psr-4": {
