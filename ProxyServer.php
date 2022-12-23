@@ -19,10 +19,10 @@ use pocketmine\utils\Binary;
 use pocketmine\utils\BinaryDataException;
 use pocketmine\utils\TextFormat;
 use pocketmine\utils\Utils;
+use raklib\generic\SocketException;
 use Socket;
 use Threaded;
 use ThreadedLogger;
-use Throwable;
 use function count;
 use function min;
 use function socket_accept;
@@ -36,8 +36,6 @@ use function socket_shutdown;
 use function socket_strerror;
 use function socket_write;
 use function strlen;
-
-define('EAGAIN', 11);
 
 class ProxyServer
 {
@@ -234,40 +232,37 @@ class ProxyServer
 
     private function onSocketReceive(int $socketId): void
     {
-        if (isset($this->socketBuffer[$socketId])) {
-            /** @var int $length */
-            /** @var string $buffer */
-            [$length, $buffer] = $this->socketBuffer[$socketId];
+        $rawFrameData = null;
 
-            $rawFrameData = $this->get($socketId, $length, $buffer);
-        } elseif (($rawFrameLength = $this->get($socketId, 4)) !== null) {
-            if ($rawFrameLength === '') {
-                return; // frame is incomplete
+        try {
+            if (isset($this->socketBuffer[$socketId])) {
+                /** @var int $length */
+                /** @var string $buffer */
+                [$length, $buffer] = $this->socketBuffer[$socketId];
+
+                $rawFrameData = $this->readBytes($socketId, $length, $buffer);
+            } elseif (($rawFrameLength = $this->readBytes($socketId, 4)) !== null) {
+                try {
+                    $packetLength = Binary::readInt($rawFrameLength);
+                } catch (BinaryDataException $exception) {
+                    throw new SocketException('Not enough bytes to read', 0, $exception);
+                }
+
+                $this->socketBuffer[$socketId] = [
+                    self::LENGTH_NEEDED => $packetLength,
+                    self::BUFFER => '',
+                ];
+
+                $rawFrameData = $this->readBytes($socketId, $packetLength);
             }
-
-            try {
-                $packetLength = Binary::readInt($rawFrameLength);
-            } catch (BinaryDataException $exception) {
-                $this->closeSocket($socketId, 'Not enough bytes to read');
-                $this->logger->logException($exception);
-                return;
-            }
-
-            $rawFrameData = $this->get($socketId, $packetLength);
-        } else {
-            $this->closeSocket($socketId, 'Invalid frame length');
-            $this->logger->debug('Socket(' . $socketId . ') returned invalid frame data length');
+        } catch (SocketException $exception) {
+            $this->closeSocket($socketId, $exception->getMessage());
+            $this->logger->debug('Socket(' . $socketId . ') returned ' . $exception->getMessage());
             return;
         }
 
-        if ($rawFrameData === '') {
-            return; //frame is incomplete;
-        }
-
-        if ($rawFrameData === null) {
-            $this->closeSocket($socketId, 'Invalid frame length');
-            $this->logger->debug('Socket(' . $socketId . ') returned invalid frame data. (New check)');
-        } else {
+        // A null frame data indicates that there is not enough bytes to read.
+        if ($rawFrameData !== null) {
             unset($this->socketBuffer[$socketId]);
 
             $pk = new ForwardPacket();
@@ -277,50 +272,37 @@ class ProxyServer
         }
     }
 
-    private function get(int $socketId, int $remainingLength, string $previousBuffer = ''): ?string
+    private function readBytes(int $socketId, int $remainingLength, string $previousBuffer = ''): ?string
     {
         /** @var Socket $socket */
         $socket = $this->getSocket($socketId);
 
-        try {
-            $length = min(self::MAX_FRAME_LENGTH, $remainingLength);
-            if (Utils::getOS() === Utils::OS_WINDOWS) {
-                // Honestly I do not think this is a problem since we are not going to deploy
-                // windows as our "production" nodes.
-                $receivedLength = socket_recv($socket, $buffer, $length, MSG_WAITALL);
-            } else {
-                $receivedLength = socket_recv($socket, $buffer, $length, MSG_DONTWAIT);
-            }
+        $length = min(self::MAX_FRAME_LENGTH, $remainingLength);
+        if (Utils::getOS() === Utils::OS_WINDOWS) {
+            // Honestly I do not think this is a problem since we are not going to deploy
+            // windows as our "production" nodes.
+            $receivedLength = @socket_recv($socket, $buffer, $length, MSG_WAITALL);
+        } else {
+            $receivedLength = @socket_recv($socket, $buffer, $length, MSG_DONTWAIT);
+        }
 
-            // If there was an error in the last socket that is not EAGAIN. Then there is
-            // definitely something wrong happening. If not, it simply mean that we have to wait
-            // for another bytes to be sent.
-            $lastError = socket_last_error($socket);
-            if ($lastError != 11 && $lastError > 0) {
-                $this->logger->debug("Packet processing error (Received frame buffer invalid): " . socket_strerror(socket_last_error($socket)));
-                socket_clear_error($socket);
+        if (!$receivedLength) {
+            $errno = socket_last_error($socket);
+            if ($errno === SOCKET_EWOULDBLOCK) {
                 return null;
             }
-
-            if ($receivedLength === false) {
-                return '';
-            }
-
-            if ($receivedLength === $remainingLength) {
-                return $previousBuffer . $buffer;
-            }
-
-            $this->socketBuffer[$socketId] = [
-                self::LENGTH_NEEDED => $remainingLength - $receivedLength,
-                self::BUFFER => $previousBuffer . $buffer,
-            ];
-
-            return '';
-        } catch (Throwable $exception) {
-            $this->logger->debug("Packet processing error");
-            $this->logger->logException($exception);
-
-            return null;
+            throw new SocketException("Failed to recv (errno $errno): " . trim(socket_strerror($errno)), $errno);
         }
+
+        if ($remainingLength === $receivedLength) {
+            return $previousBuffer . $buffer;
+        }
+
+        $this->socketBuffer[$socketId] = [
+            self::LENGTH_NEEDED => $remainingLength - $receivedLength,
+            self::BUFFER => $previousBuffer . $buffer,
+        ];
+
+        return null;
     }
 }
