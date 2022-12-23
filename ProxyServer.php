@@ -22,6 +22,7 @@ use pocketmine\utils\Utils;
 use Socket;
 use Threaded;
 use ThreadedLogger;
+use Throwable;
 use function count;
 use function min;
 use function socket_accept;
@@ -265,7 +266,7 @@ class ProxyServer
 
         if ($rawFrameData === null) {
             $this->closeSocket($socketId, 'Invalid frame length');
-            $this->logger->debug('Socket(' . $socketId . ') returned invalid frame data');
+            $this->logger->debug('Socket(' . $socketId . ') returned invalid frame data. (New check)');
         } else {
             unset($this->socketBuffer[$socketId]);
 
@@ -295,7 +296,7 @@ class ProxyServer
             // definitely something wrong happening. If not, it simply mean that we have to wait
             // for another bytes to be sent.
             $lastError = socket_last_error($socket);
-            if ($lastError != EAGAIN && $lastError > 0) {
+            if ($lastError != 11 && $lastError > 0) {
                 $this->logger->debug("Packet processing error (Received frame buffer invalid): " . socket_strerror(socket_last_error($socket)));
                 socket_clear_error($socket);
                 return null;
@@ -315,7 +316,10 @@ class ProxyServer
             ];
 
             return '';
-        } catch (ErrorException $exception) {
+        } catch (Throwable $exception) {
+            $this->logger->debug("Packet processing error");
+            $this->logger->logException($exception);
+
             return null;
         }
     }
