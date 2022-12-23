@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-
 namespace libproxy;
 
 use ErrorException;
@@ -36,6 +35,8 @@ use function socket_shutdown;
 use function socket_strerror;
 use function socket_write;
 use function strlen;
+
+define('EAGAIN', 11);
 
 class ProxyServer
 {
@@ -290,9 +291,20 @@ class ProxyServer
                 $receivedLength = socket_recv($socket, $buffer, $length, MSG_DONTWAIT);
             }
 
-            if ($receivedLength === false) {
+            // If there was an error in the last socket that is not EAGAIN. Then there is
+            // definitely something wrong happening. If not, it simply mean that we have to wait
+            // for another bytes to be sent.
+            $lastError = socket_last_error($socket);
+            if ($lastError != EAGAIN && $lastError > 0) {
+                $this->logger->debug("Packet processing error (Received frame buffer invalid): " . socket_strerror(socket_last_error($socket)));
+                socket_clear_error($socket);
                 return null;
             }
+
+            if ($receivedLength === false) {
+                return '';
+            }
+
             if ($receivedLength === $remainingLength) {
                 return $previousBuffer . $buffer;
             }
