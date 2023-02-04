@@ -35,6 +35,7 @@ use pocketmine\utils\TextFormat;
 use RuntimeException;
 use Socket;
 use Threaded;
+use ThreadedArray;
 use WeakMap;
 use function bin2hex;
 use function socket_close;
@@ -99,8 +100,8 @@ final class ProxyNetworkInterface implements NetworkInterface
         $this->server = $server;
         $this->notifier = new SleeperNotifier();
 
-        $mainToThreadBuffer = new Threaded();
-        $threadToMainBuffer = new Threaded();
+        $mainToThreadBuffer = new ThreadedArray();
+        $threadToMainBuffer = new ThreadedArray();
 
         $this->proxy = new ProxyThread(
             $composerPath,

@@ -12,6 +12,7 @@ use pocketmine\thread\Thread;
 use RuntimeException;
 use Socket;
 use Threaded;
+use ThreadedArray;
 use ThreadedLogger;
 use Throwable;
 use function error_get_last;
@@ -45,10 +46,10 @@ class ProxyThread extends Thread
     /** @var bool */
     private bool $ready = false;
 
-    /** @var Threaded */
-    private Threaded $mainToThreadBuffer;
-    /** @var Threaded */
-    private Threaded $threadToMainBuffer;
+    /** @var ThreadedArray */
+    private ThreadedArray $mainToThreadBuffer;
+    /** @var ThreadedArray */
+    private ThreadedArray $threadToMainBuffer;
 
     /** @var SleeperNotifier */
     private SleeperNotifier $notifier;
@@ -60,7 +61,7 @@ class ProxyThread extends Thread
     /** @var int */
     private int $serverPort;
 
-    public function __construct(?string $autoloaderPath, string $serverIp, int $serverPort, ThreadedLogger $logger, Threaded $mainToThreadBuffer, Threaded $threadToMainBuffer, SleeperNotifier $notifier, Socket $notifySocket)
+    public function __construct(?string $autoloaderPath, string $serverIp, int $serverPort, ThreadedLogger $logger, ThreadedArray $mainToThreadBuffer, ThreadedArray $threadToMainBuffer, SleeperNotifier $notifier, Socket $notifySocket)
     {
         $this->autoloaderPath = $autoloaderPath;
 

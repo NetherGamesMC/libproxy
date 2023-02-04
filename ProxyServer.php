@@ -22,6 +22,7 @@ use pocketmine\utils\Utils;
 use raklib\generic\SocketException;
 use Socket;
 use Threaded;
+use ThreadedArray;
 use ThreadedLogger;
 use function count;
 use function min;
@@ -67,7 +68,7 @@ class ProxyServer
     /** @var int */
     private int $socketId = 0;
 
-    public function __construct(ThreadedLogger $logger, Socket $serverSocket, Threaded $mainToThreadBuffer, Threaded $threadToMainBuffer, SleeperNotifier $notifier, Socket $notifySocket)
+    public function __construct(ThreadedLogger $logger, Socket $serverSocket, ThreadedArray $mainToThreadBuffer, ThreadedArray $threadToMainBuffer, SleeperNotifier $notifier, Socket $notifySocket)
     {
         $this->logger = $logger;
         $this->serverSocket = $serverSocket;
