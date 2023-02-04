@@ -21,7 +21,6 @@ use pocketmine\utils\TextFormat;
 use pocketmine\utils\Utils;
 use raklib\generic\SocketException;
 use Socket;
-use Threaded;
 use ThreadedArray;
 use ThreadedLogger;
 use function count;

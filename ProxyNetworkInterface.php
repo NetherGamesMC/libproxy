@@ -34,7 +34,6 @@ use pocketmine\utils\BinaryDataException;
 use pocketmine\utils\TextFormat;
 use RuntimeException;
 use Socket;
-use Threaded;
 use ThreadedArray;
 use WeakMap;
 use function bin2hex;

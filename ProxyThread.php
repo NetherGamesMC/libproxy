@@ -11,7 +11,6 @@ use pocketmine\snooze\SleeperNotifier;
 use pocketmine\thread\Thread;
 use RuntimeException;
 use Socket;
-use Threaded;
 use ThreadedArray;
 use ThreadedLogger;
 use Throwable;
