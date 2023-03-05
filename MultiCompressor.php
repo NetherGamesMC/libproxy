@@ -7,28 +7,24 @@ namespace libproxy;
 
 
 use ErrorException;
-use GlobalLogger;
 use pocketmine\network\mcpe\compression\Compressor;
 use pocketmine\network\mcpe\compression\DecompressionException;
 use pocketmine\network\mcpe\compression\ZlibCompressor;
 use pocketmine\utils\BinaryDataException;
 use pocketmine\utils\BinaryStream;
 use pocketmine\utils\SingletonTrait;
-use RuntimeException;
 use function zstd_uncompress;
 
 class MultiCompressor implements Compressor
 {
-    public const ZSTD_COMPRESSION_LEVEL = -1;
-
     public const METHOD_ZLIB = 0x00;
     public const METHOD_ZSTD = 0x01;
 
     use SingletonTrait;
 
-    public function willCompress(string $data): bool
+    public function getCompressionThreshold(): ?int
     {
-        return true;
+        return ZlibCompressor::getInstance()->getCompressionThreshold();
     }
 
     public function decompress(string $payload): string
@@ -59,9 +55,6 @@ class MultiCompressor implements Compressor
     }
 
     /**
-     * The proxy needs to know the length of the string before compression for allocating buffers (JAVA)
-     * @see decompress() doesn't need this as it's not send back by the Proxy, since we don't need it
-     *
      * @param string $payload
      * @return string
      */
