@@ -7,14 +7,12 @@ namespace libproxy;
 
 
 use ErrorException;
-use GlobalLogger;
 use pocketmine\network\mcpe\compression\Compressor;
 use pocketmine\network\mcpe\compression\DecompressionException;
 use pocketmine\network\mcpe\compression\ZlibCompressor;
 use pocketmine\utils\BinaryDataException;
 use pocketmine\utils\BinaryStream;
 use pocketmine\utils\SingletonTrait;
-use RuntimeException;
 use function zstd_uncompress;
 
 class MultiCompressor implements Compressor
