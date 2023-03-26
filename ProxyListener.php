@@ -11,6 +11,7 @@ use pocketmine\network\mcpe\protocol\NetworkSettingsPacket;
 use pocketmine\network\mcpe\protocol\NetworkStackLatencyPacket;
 use pocketmine\network\mcpe\protocol\RequestNetworkSettingsPacket;
 use pocketmine\network\mcpe\protocol\types\CompressionAlgorithm;
+use function method_exists;
 
 class ProxyListener implements Listener
 {
@@ -24,7 +25,7 @@ class ProxyListener implements Listener
         $origin = $event->getOrigin();
         $packet = $event->getPacket();
 
-        switch ($packet->pid()){
+        switch ($packet->pid()) {
             case NetworkStackLatencyPacket::NETWORK_ID:
                 /** @var NetworkStackLatencyPacket $packet USED FOR PING CALCULATIONS */
                 if ($packet->timestamp === 0 && $packet->needResponse) {
@@ -36,7 +37,9 @@ class ProxyListener implements Listener
                 break;
             case RequestNetworkSettingsPacket::NETWORK_ID:
                 /** @var RequestNetworkSettingsPacket $packet USED TO SIMULATE VANILLA BEHAVIOUR, SINCE IT'S NOT USED BY US */
-                $origin->setProtocolId($packet->getProtocolVersion());
+                if (method_exists($origin, 'setProtocolId')) {
+                    $origin->setProtocolId($packet->getProtocolVersion());
+                }
 
                 $origin->sendDataPacket(NetworkSettingsPacket::create(
                     NetworkSettingsPacket::COMPRESS_EVERYTHING,
