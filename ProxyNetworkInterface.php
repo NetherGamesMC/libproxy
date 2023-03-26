@@ -255,8 +255,10 @@ final class ProxyNetworkInterface implements NetworkInterface
             $this->server,
             $this->server->getNetwork()->getSessionManager(),
             PacketPool::getInstance(),
+            $this->server->getPacketSerializerContext(),
             new ProxyPacketSender($socketId, $this),
-            RakLibInterface::getBroadcaster($this->server, ProtocolInfo::CURRENT_PROTOCOL),
+            $this->server->getPacketBroadcaster(),
+            $this->server->getEntityEventBroadcaster(),
             MultiCompressor::getInstance(),
             $ip,
             $port

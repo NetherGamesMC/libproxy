@@ -20,11 +20,19 @@ class MultiCompressor implements Compressor
     public const METHOD_ZLIB = 0x00;
     public const METHOD_ZSTD = 0x01;
 
+    /** @var ZlibCompressor */
+    private ZlibCompressor $zlibCompressor;
+
     use SingletonTrait;
+
+    public function __construct()
+    {
+        $this->zlibCompressor = ZlibCompressor::getInstance();
+    }
 
     public function getCompressionThreshold(): ?int
     {
-        return ZlibCompressor::getInstance()->getCompressionThreshold();
+        return $this->zlibCompressor->getCompressionThreshold();
     }
 
     public function decompress(string $payload): string
@@ -36,7 +44,7 @@ class MultiCompressor implements Compressor
 
             try {
                 $result = match ($method) {
-                    self::METHOD_ZLIB => ZlibCompressor::getInstance()->decompress($stream->getRemaining()),
+                    self::METHOD_ZLIB => $this->zlibCompressor->decompress($stream->getRemaining()),
                     self::METHOD_ZSTD => zstd_uncompress($stream->getRemaining()),
                     default => throw new DecompressionException("Decompression method not found"),
                 };
@@ -60,6 +68,6 @@ class MultiCompressor implements Compressor
      */
     public function compress(string $payload): string
     {
-        return ZlibCompressor::getInstance()->compress($payload);
+        return $this->zlibCompressor->compress($payload);
     }
 }
