@@ -15,23 +15,18 @@ use libproxy\protocol\LoginPacket;
 use libproxy\protocol\ProxyPacket;
 use libproxy\protocol\ProxyPacketPool;
 use libproxy\protocol\ProxyPacketSerializer;
-use pocketmine\network\mcpe\handler\LoginPacketHandler;
 use pocketmine\network\mcpe\NetworkSession;
 use pocketmine\network\mcpe\protocol\PacketPool;
-use pocketmine\network\mcpe\protocol\ProtocolInfo;
 use pocketmine\network\mcpe\raklib\PthreadsChannelReader;
 use pocketmine\network\mcpe\raklib\PthreadsChannelWriter;
-use pocketmine\network\mcpe\raklib\RakLibInterface;
 use pocketmine\network\NetworkInterface;
 use pocketmine\network\PacketHandlingException;
-use pocketmine\player\PlayerInfo;
 use pocketmine\plugin\PluginBase;
 use pocketmine\scheduler\ClosureTask;
 use pocketmine\Server;
 use pocketmine\snooze\SleeperNotifier;
 use pocketmine\utils\Binary;
 use pocketmine\utils\BinaryDataException;
-use pocketmine\utils\TextFormat;
 use RuntimeException;
 use Socket;
 use Threaded;
@@ -49,6 +44,8 @@ use const AF_INET;
 use const AF_UNIX;
 use const PTHREADS_INHERIT_CONSTANTS;
 use const SOCK_STREAM;
+use const SOCKET_ENOPROTOOPT;
+use const SOCKET_EPROTONOSUPPORT;
 
 final class ProxyNetworkInterface implements NetworkInterface
 {
@@ -191,10 +188,10 @@ final class ProxyNetworkInterface implements NetworkInterface
                 case DisconnectPacket::NETWORK_ID:
                     /** @var DisconnectPacket $pk */
                     if ($this->getSession($socketId) === null) {
-                        throw new PacketHandlingException('Socket with id (' . $socketId . ") doesn't have a session.");
+                        break;
                     }
 
-                    $this->close($socketId);
+                    $this->close($socketId, $pk->reason, true);
                     break;
                 case ForwardPacket::NETWORK_ID:
                     /** @var ForwardPacket $pk */
@@ -211,15 +208,27 @@ final class ProxyNetworkInterface implements NetworkInterface
         }
     }
 
-    public function close(int $socketId, string $reason = TextFormat::EOL): void
+    public function close(int $socketId, string $reason, bool $fromThread = false) : void
     {
-        if (($session = $this->getSession($socketId)) !== null) {
-            $session->onClientDisconnect('Socket disconnect');
+        static $disconnectGuard = false;
+        if($disconnectGuard) {
+            return;
         }
 
+        $session = $this->getSession($socketId);
         unset($this->sessions[$socketId]);
 
-        if ($reason !== TextFormat::EOL) {
+        // We don't need to call disconnect() when player is already being kicked by the server.
+        if($fromThread && $session !== null){
+            /**
+             * {@link NetworkSession::tryDisconnect()} is calling the current method when calls {@link ProxyPacketSender::close()}
+             */
+            $disconnectGuard = true;
+            $session->onClientDisconnect($reason);
+            $disconnectGuard = false;
+        }
+
+        if(!$fromThread){
             $pk = new DisconnectPacket();
             $pk->reason = $reason;
 
