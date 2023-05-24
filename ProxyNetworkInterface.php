@@ -208,7 +208,7 @@ final class ProxyNetworkInterface implements NetworkInterface
         }
     }
 
-    public function close(int $socketId, string $reason, bool $fromThread = false) : void
+    public function close(int $socketId, string $reason, bool $fromThread = false, bool $kicked = false) : void
     {
         static $disconnectGuard = false;
         if($disconnectGuard) {
@@ -218,8 +218,7 @@ final class ProxyNetworkInterface implements NetworkInterface
         $session = $this->getSession($socketId);
         unset($this->sessions[$socketId]);
 
-        // We don't need to call disconnect() when player is already being kicked by the server.
-        if($fromThread && $session !== null){
+        if(!$kicked && $session !== null){
             /**
              * {@link NetworkSession::tryDisconnect()} is calling the current method when calls {@link ProxyPacketSender::close()}
              */
