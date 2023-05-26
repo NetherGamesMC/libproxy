@@ -32,6 +32,7 @@ use const SO_SNDBUF;
 use const SOCK_STREAM;
 use const SOL_SOCKET;
 use const SOL_TCP;
+use const TCP_NODELAY;
 
 class ProxyThread extends Thread
 {

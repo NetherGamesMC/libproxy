@@ -17,7 +17,6 @@ use pocketmine\network\PacketHandlingException;
 use pocketmine\snooze\SleeperNotifier;
 use pocketmine\utils\Binary;
 use pocketmine\utils\BinaryDataException;
-use pocketmine\utils\TextFormat;
 use pocketmine\utils\Utils;
 use raklib\generic\SocketException;
 use Socket;
@@ -32,10 +31,19 @@ use function socket_last_error;
 use function socket_read;
 use function socket_recv;
 use function socket_select;
+use function socket_set_option;
 use function socket_shutdown;
 use function socket_strerror;
 use function socket_write;
 use function strlen;
+use function trim;
+use const MSG_DONTWAIT;
+use const MSG_WAITALL;
+use const SO_LINGER;
+use const SO_RCVTIMEO;
+use const SO_SNDTIMEO;
+use const SOCKET_EWOULDBLOCK;
+use const SOL_SOCKET;
 
 class ProxyServer
 {
@@ -80,7 +88,7 @@ class ProxyServer
     public function waitShutdown(): void
     {
         foreach ($this->sockets as $socketId => $socket) {
-            $this->closeSocket($socketId, "server shutdown");
+            $this->closeSocket($socketId, "server shutdown", true);
         }
 
         while (count($this->sockets) > 0) {
@@ -91,7 +99,7 @@ class ProxyServer
         @socket_close($this->notifySocket);
     }
 
-    private function closeSocket(int $socketId, string $reason = TextFormat::EOL): void
+    private function closeSocket(int $socketId, string $reason, bool $fromMain = false): void
     {
         if (($socket = $this->getSocket($socketId)) !== null) {
             try {
@@ -105,7 +113,7 @@ class ProxyServer
 
         $this->logger->debug("Disconnected socket with id " . $socketId);
 
-        if ($reason !== TextFormat::EOL) {
+        if (!$fromMain) {
             $pk = new DisconnectPacket();
             $pk->reason = $reason;
 
@@ -176,7 +184,7 @@ class ProxyServer
                     case DisconnectPacket::NETWORK_ID:
                         /** @var DisconnectPacket $pk */
                         if ($this->getSocket($socketId) !== null) {
-                            $this->closeSocket($socketId);
+                            $this->closeSocket($socketId, $pk->reason, true);
                         }
                         break;
                     case ForwardPacket::NETWORK_ID:

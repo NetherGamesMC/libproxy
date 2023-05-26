@@ -40,7 +40,9 @@ class ProxyPacketSender implements PacketSender
     {
         if (!$this->closed) {
             $this->closed = true;
-            $this->handler->close($this->socketId, $reason);
+
+            // We don't need to call onClientDisconnect() when player is already being kicked by the server.
+            $this->handler->close($this->socketId, $reason, false, true);
         }
     }
 }
