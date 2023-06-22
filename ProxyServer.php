@@ -203,7 +203,9 @@ class ProxyServer
                         break;
                 }
             } catch (PacketHandlingException $exception) {
-                $this->closeSocket($socketId, 'Error handling a Packet');
+                $this->closeSocket($socketId, 'Error handling a Packet (Connection)');
+
+                $this->logger->logException($exception);
             }
         }
     }
@@ -299,7 +301,13 @@ class ProxyServer
             if ($errno === SOCKET_EWOULDBLOCK) {
                 return null;
             }
-            throw new SocketException("Failed to recv (errno $errno): " . trim(socket_strerror($errno)), $errno);
+            // Indicates that the socket was closed.
+            if ($errno === 0) {
+                throw new SocketException("client disconnect");
+            }
+
+            // Otherwise throw an exception as normal.
+            throw new SocketException(strtolower(trim(socket_strerror($errno))) . " (errno $errno)", $errno);
         }
 
         if ($remainingLength === $receivedLength) {

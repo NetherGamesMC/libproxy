@@ -204,7 +204,9 @@ final class ProxyNetworkInterface implements NetworkInterface
                     break;
             }
         } catch (PacketHandlingException | BinaryDataException $exception) {
-            $this->close($socketId, 'Error handling a Packet');
+            $this->close($socketId, 'Error handling a Packet (Server)');
+
+            $this->server->getLogger()->logException($exception);
         }
     }
 
