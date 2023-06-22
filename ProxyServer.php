@@ -195,17 +195,15 @@ class ProxyServer
 
                         try {
                             if (socket_write($socket, Binary::writeInt(strlen($pk->payload)) . $pk->payload) === false) {
-                                throw new PacketHandlingException('Socket with id (' . $socketId . ") isn't writable.");
+                                throw new PacketHandlingException('client disconnect');
                             }
                         } catch (ErrorException $exception) {
-                            throw PacketHandlingException::wrap($exception, 'Socket with id (' . $socketId . ") isn't writable.");
+                            throw PacketHandlingException::wrap($exception, 'client disconnect');
                         }
                         break;
                 }
             } catch (PacketHandlingException $exception) {
-                $this->closeSocket($socketId, 'Error handling a Packet (Connection)');
-
-                $this->logger->logException($exception);
+                $this->closeSocket($socketId, $exception->getMessage());
             }
         }
     }
