@@ -51,8 +51,8 @@ class ProxyThread extends Thread
     /** @var ThreadSafeArray */
     private ThreadSafeArray $threadToMainBuffer;
 
-    /** @var SleeperHandlerEntry */
-    private SleeperHandlerEntry $notifier;
+    /** @var SleeperNotifier */
+    private SleeperNotifier $notifier;
     /** @var Socket */
     private Socket $notifySocket;
 
