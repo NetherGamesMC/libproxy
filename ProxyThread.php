@@ -32,6 +32,7 @@ use const SO_SNDBUF;
 use const SOCK_STREAM;
 use const SOL_SOCKET;
 use const SOL_TCP;
+use const TCP_NODELAY;
 
 class ProxyThread extends Thread
 {
@@ -183,7 +184,7 @@ class ProxyThread extends Thread
         if (!socket_listen($serverSocket, 10)) {
             throw new RuntimeException("Failed to listen to socket: " . socket_strerror(socket_last_error($serverSocket)));
         }
-        if (!socket_set_option($serverSocket, SOL_SOCKET, SO_SNDBUF, 8 * 1024 * 1024) || !socket_set_option($serverSocket, SOL_SOCKET, SO_RCVBUF, 8 * 1024 * 1024)) {
+        if (!socket_set_option($serverSocket, SOL_SOCKET, SO_SNDBUF, 8 * 1024 * 1024) || !socket_set_option($serverSocket, SOL_SOCKET, SO_RCVBUF, 8 * 1024 * 1024) || !socket_set_option($serverSocket, SOL_TCP, TCP_NODELAY, 1)) {
             throw new RuntimeException("Failed to set option on socket: " . socket_strerror(socket_last_error($serverSocket)));
         }
 
