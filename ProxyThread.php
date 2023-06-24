@@ -6,13 +6,13 @@ declare(strict_types=1);
 namespace libproxy;
 
 
+use pmmp\thread\ThreadSafeArray;
 use pocketmine\Server;
-use pocketmine\snooze\SleeperNotifier;
+use pocketmine\snooze\SleeperHandlerEntry;
+use pocketmine\thread\log\AttachableThreadSafeLogger;
 use pocketmine\thread\Thread;
 use RuntimeException;
 use Socket;
-use ThreadedArray;
-use ThreadedLogger;
 use Throwable;
 use function error_get_last;
 use function gc_enable;
@@ -25,7 +25,6 @@ use function socket_listen;
 use function socket_set_option;
 use function socket_strerror;
 use const AF_INET;
-use const PTHREADS_INHERIT_NONE;
 use const SO_RCVBUF;
 use const SO_REUSEADDR;
 use const SO_SNDBUF;
@@ -39,20 +38,20 @@ class ProxyThread extends Thread
     public ?string $autoloaderPath = null;
     /** @var string|null */
     public ?string $crashInfo = null;
-    /** @var ThreadedLogger */
-    private ThreadedLogger $logger;
+    /** @var AttachableThreadSafeLogger */
+    private AttachableThreadSafeLogger $logger;
     /** @var bool */
     private bool $cleanShutdown = false;
     /** @var bool */
     private bool $ready = false;
 
-    /** @var ThreadedArray */
-    private ThreadedArray $mainToThreadBuffer;
-    /** @var ThreadedArray */
-    private ThreadedArray $threadToMainBuffer;
+    /** @var ThreadSafeArray */
+    private ThreadSafeArray $mainToThreadBuffer;
+    /** @var ThreadSafeArray */
+    private ThreadSafeArray $threadToMainBuffer;
 
-    /** @var SleeperNotifier */
-    private SleeperNotifier $notifier;
+    /** @var SleeperHandlerEntry */
+    private SleeperHandlerEntry $sleeperEntry;
     /** @var Socket */
     private Socket $notifySocket;
 
@@ -61,7 +60,7 @@ class ProxyThread extends Thread
     /** @var int */
     private int $serverPort;
 
-    public function __construct(?string $autoloaderPath, string $serverIp, int $serverPort, ThreadedLogger $logger, ThreadedArray $mainToThreadBuffer, ThreadedArray $threadToMainBuffer, SleeperNotifier $notifier, Socket $notifySocket)
+    public function __construct(?string $autoloaderPath, string $serverIp, int $serverPort, AttachableThreadSafeLogger $logger, ThreadSafeArray $mainToThreadBuffer, ThreadSafeArray $threadToMainBuffer, SleeperHandlerEntry $sleeperEntry, Socket $notifySocket)
     {
         $this->autoloaderPath = $autoloaderPath;
 
@@ -73,7 +72,7 @@ class ProxyThread extends Thread
         $this->mainToThreadBuffer = $mainToThreadBuffer;
         $this->threadToMainBuffer = $threadToMainBuffer;
 
-        $this->notifier = $notifier;
+        $this->sleeperEntry = $sleeperEntry;
 
         $this->setClassLoaders([Server::getInstance()->getLoader()]);
     }
@@ -115,7 +114,7 @@ class ProxyThread extends Thread
         $this->isKilled = true;
     }
 
-    public function startAndWait(int $options = PTHREADS_INHERIT_NONE): void
+    public function startAndWait(int $options): void
     {
         $this->start($options);
         $this->synchronized(function (): void {
@@ -147,7 +146,7 @@ class ProxyThread extends Thread
                 $this->createServerSocket(),
                 $this->mainToThreadBuffer,
                 $this->threadToMainBuffer,
-                $this->notifier,
+                $this->sleeperNotifier,
                 $this->notifySocket,
             );
 

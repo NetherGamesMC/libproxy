@@ -7,6 +7,7 @@ namespace libproxy;
 
 use Error;
 use Exception;
+use pmmp\thread\Thread as NativeThread;
 use libproxy\data\LatencyData;
 use libproxy\data\TickSyncPacket;
 use libproxy\protocol\DisconnectPacket;
@@ -15,6 +16,8 @@ use libproxy\protocol\LoginPacket;
 use libproxy\protocol\ProxyPacket;
 use libproxy\protocol\ProxyPacketPool;
 use libproxy\protocol\ProxyPacketSerializer;
+use pmmp\thread\ThreadSafeArray;
+use pocketmine\network\mcpe\convert\TypeConverter;
 use pocketmine\network\mcpe\NetworkSession;
 use pocketmine\network\mcpe\protocol\PacketPool;
 use pocketmine\network\mcpe\raklib\PthreadsChannelReader;
@@ -24,7 +27,7 @@ use pocketmine\network\PacketHandlingException;
 use pocketmine\plugin\PluginBase;
 use pocketmine\scheduler\ClosureTask;
 use pocketmine\Server;
-use pocketmine\snooze\SleeperNotifier;
+use pocketmine\snooze\SleeperHandlerEntry;
 use pocketmine\utils\Binary;
 use pocketmine\utils\BinaryDataException;
 use RuntimeException;
@@ -42,7 +45,6 @@ use function substr;
 use function trim;
 use const AF_INET;
 use const AF_UNIX;
-use const PTHREADS_INHERIT_CONSTANTS;
 use const SOCK_STREAM;
 use const SOCKET_ENOPROTOOPT;
 use const SOCKET_EPROTONOSUPPORT;
@@ -56,8 +58,8 @@ final class ProxyNetworkInterface implements NetworkInterface
     private Server $server;
     /** @var ProxyThread */
     private ProxyThread $proxy;
-    /** @var SleeperNotifier */
-    private SleeperNotifier $notifier;
+    /** @var SleeperHandlerEntry */
+    private SleeperHandlerEntry $sleeperEntry;
     /** @var Socket */
     private Socket $threadNotifier;
     /** @var PthreadsChannelWriter */
@@ -94,10 +96,14 @@ final class ProxyNetworkInterface implements NetworkInterface
         $this->threadNotifier = $threadNotifier;
 
         $this->server = $server;
-        $this->notifier = new SleeperNotifier();
+        $this->sleeperEntry = $plugin->getServer()->getTickSleeper()->addNotifier(function (): void {
+            while (($payload = $this->threadToMainReader->read()) !== null) {
+                $this->onPacketReceive($payload);
+            }
+        });
 
-        $mainToThreadBuffer = new ThreadedArray();
-        $threadToMainBuffer = new ThreadedArray();
+        $mainToThreadBuffer = new ThreadSafeArray();
+        $threadToMainBuffer = new ThreadSafeArray();
 
         $this->proxy = new ProxyThread(
             $composerPath,
@@ -106,7 +112,7 @@ final class ProxyNetworkInterface implements NetworkInterface
             $server->getLogger(),
             $mainToThreadBuffer,
             $threadToMainBuffer,
-            $this->notifier,
+            $this->sleeperEntry,
             $threadNotification,
         );
 
@@ -139,13 +145,8 @@ final class ProxyNetworkInterface implements NetworkInterface
 
     public function start(): void
     {
-        $this->server->getTickSleeper()->addNotifier($this->notifier, function (): void {
-            while (($payload = $this->threadToMainReader->read()) !== null) {
-                $this->onPacketReceive($payload);
-            }
-        });
         $this->server->getLogger()->debug('Waiting for Proxy to start...');
-        $this->proxy->startAndWait(PTHREADS_INHERIT_CONSTANTS); //HACK: MainLogger needs constants for exception logging
+        $this->proxy->startAndWait(NativeThread::INHERIT_CONSTANTS); //HACK: MainLogger needs constants for exception logging
         $this->server->getLogger()->debug('Proxy booted successfully');
     }
 
@@ -261,15 +262,21 @@ final class ProxyNetworkInterface implements NetworkInterface
 
     public function createSession(int $socketId, string $ip, int $port): NetworkSession
     {
+        $typeConverter = TypeConverter::getInstance();
+        $packetSerializerContext = $this->server->getPacketSerializerContext($typeConverter);
+        $packetBroadcaster = $this->server->getPacketBroadcaster($packetSerializerContext);
+        $entityEventBroadcaster = $this->server->getEntityEventBroadcaster($packetBroadcaster, $typeConverter);
+
         $session = new NetworkSession(
             $this->server,
             $this->server->getNetwork()->getSessionManager(),
             PacketPool::getInstance(),
-            $this->server->getPacketSerializerContext(),
+            $packetSerializerContext,
             new ProxyPacketSender($socketId, $this),
-            $this->server->getPacketBroadcaster(),
-            $this->server->getEntityEventBroadcaster(),
+            $packetBroadcaster,
+            $entityEventBroadcaster,
             MultiCompressor::getInstance(),
+            TypeConverter::getInstance(),
             $ip,
             $port
         );
@@ -313,6 +320,6 @@ final class ProxyNetworkInterface implements NetworkInterface
         $this->proxy->quit();
 
         @socket_close($this->threadNotifier);
-        $this->server->getTickSleeper()->removeNotifier($this->notifier);
+        $this->server->getTickSleeper()->removeNotifier($this->sleeperEntry->getNotifierId());
     }
 }

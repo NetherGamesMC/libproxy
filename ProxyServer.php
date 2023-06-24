@@ -11,17 +11,17 @@ use libproxy\protocol\LoginPacket;
 use libproxy\protocol\ProxyPacket;
 use libproxy\protocol\ProxyPacketPool;
 use libproxy\protocol\ProxyPacketSerializer;
+use pmmp\thread\ThreadSafeArray;
 use pocketmine\network\mcpe\raklib\PthreadsChannelReader;
 use pocketmine\network\mcpe\raklib\SnoozeAwarePthreadsChannelWriter;
 use pocketmine\network\PacketHandlingException;
 use pocketmine\snooze\SleeperNotifier;
+use pocketmine\thread\log\AttachableThreadSafeLogger;
 use pocketmine\utils\Binary;
 use pocketmine\utils\BinaryDataException;
 use pocketmine\utils\Utils;
 use raklib\generic\SocketException;
 use Socket;
-use ThreadedArray;
-use ThreadedLogger;
 use function count;
 use function min;
 use function socket_accept;
@@ -55,8 +55,8 @@ class ProxyServer
     private const LENGTH_NEEDED = 0;
     private const BUFFER = 1;
 
-    /** @var ThreadedLogger */
-    private ThreadedLogger $logger;
+    /** @var AttachableThreadSafeLogger */
+    private AttachableThreadSafeLogger $logger;
     /** @var PthreadsChannelReader */
     private PthreadsChannelReader $mainToThreadReader;
     /** @var SnoozeAwarePthreadsChannelWriter */
@@ -75,7 +75,7 @@ class ProxyServer
     /** @var int */
     private int $socketId = 0;
 
-    public function __construct(ThreadedLogger $logger, Socket $serverSocket, ThreadedArray $mainToThreadBuffer, ThreadedArray $threadToMainBuffer, SleeperNotifier $notifier, Socket $notifySocket)
+    public function __construct(AttachableThreadSafeLogger $logger, Socket $serverSocket, ThreadSafeArray $mainToThreadBuffer, ThreadSafeArray $threadToMainBuffer, SleeperNotifier $notifier, Socket $notifySocket)
     {
         $this->logger = $logger;
         $this->serverSocket = $serverSocket;
