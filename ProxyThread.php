@@ -9,6 +9,7 @@ namespace libproxy;
 use pmmp\thread\ThreadSafeArray;
 use pocketmine\Server;
 use pocketmine\snooze\SleeperHandlerEntry;
+use pocketmine\snooze\SleeperNotifier;
 use pocketmine\thread\log\AttachableThreadSafeLogger;
 use pocketmine\thread\Thread;
 use RuntimeException;
@@ -51,7 +52,7 @@ class ProxyThread extends Thread
     private ThreadSafeArray $threadToMainBuffer;
 
     /** @var SleeperHandlerEntry */
-    private SleeperHandlerEntry $sleeperEntry;
+    private SleeperHandlerEntry $notifier;
     /** @var Socket */
     private Socket $notifySocket;
 
@@ -60,7 +61,7 @@ class ProxyThread extends Thread
     /** @var int */
     private int $serverPort;
 
-    public function __construct(?string $autoloaderPath, string $serverIp, int $serverPort, AttachableThreadSafeLogger $logger, ThreadSafeArray $mainToThreadBuffer, ThreadSafeArray $threadToMainBuffer, SleeperHandlerEntry $sleeperEntry, Socket $notifySocket)
+    public function __construct(?string $autoloaderPath, string $serverIp, int $serverPort, AttachableThreadSafeLogger $logger, ThreadSafeArray $mainToThreadBuffer, ThreadSafeArray $threadToMainBuffer, SleeperNotifier $notifier, Socket $notifySocket)
     {
         $this->autoloaderPath = $autoloaderPath;
 
@@ -72,7 +73,7 @@ class ProxyThread extends Thread
         $this->mainToThreadBuffer = $mainToThreadBuffer;
         $this->threadToMainBuffer = $threadToMainBuffer;
 
-        $this->sleeperEntry = $sleeperEntry;
+        $this->notifier = $notifier;
 
         $this->setClassLoaders([Server::getInstance()->getLoader()]);
     }
@@ -146,7 +147,7 @@ class ProxyThread extends Thread
                 $this->createServerSocket(),
                 $this->mainToThreadBuffer,
                 $this->threadToMainBuffer,
-                $this->sleeperNotifier,
+                $this->notifier,
                 $this->notifySocket,
             );
 
