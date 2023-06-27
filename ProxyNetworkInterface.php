@@ -112,7 +112,7 @@ final class ProxyNetworkInterface implements NetworkInterface
             $server->getLogger(),
             $mainToThreadBuffer,
             $threadToMainBuffer,
-            $this->sleeperEntry->createNotifier(),
+            $this->sleeperEntry,
             $threadNotification,
         );
 

@@ -15,6 +15,7 @@ use pmmp\thread\ThreadSafeArray;
 use pocketmine\network\mcpe\raklib\PthreadsChannelReader;
 use pocketmine\network\mcpe\raklib\SnoozeAwarePthreadsChannelWriter;
 use pocketmine\network\PacketHandlingException;
+use pocketmine\snooze\SleeperHandlerEntry;
 use pocketmine\snooze\SleeperNotifier;
 use pocketmine\thread\log\AttachableThreadSafeLogger;
 use pocketmine\utils\Binary;
@@ -75,14 +76,14 @@ class ProxyServer
     /** @var int */
     private int $socketId = 0;
 
-    public function __construct(AttachableThreadSafeLogger $logger, Socket $serverSocket, ThreadSafeArray $mainToThreadBuffer, ThreadSafeArray $threadToMainBuffer, SleeperNotifier $notifier, Socket $notifySocket)
+    public function __construct(AttachableThreadSafeLogger $logger, Socket $serverSocket, ThreadSafeArray $mainToThreadBuffer, ThreadSafeArray $threadToMainBuffer, SleeperHandlerEntry $sleeperEntry, Socket $notifySocket)
     {
         $this->logger = $logger;
         $this->serverSocket = $serverSocket;
         $this->notifySocket = $notifySocket;
 
         $this->mainToThreadReader = new PthreadsChannelReader($mainToThreadBuffer);
-        $this->threadToMainWriter = new SnoozeAwarePthreadsChannelWriter($threadToMainBuffer, $notifier);
+        $this->threadToMainWriter = new SnoozeAwarePthreadsChannelWriter($threadToMainBuffer, $sleeperEntry->createNotifier());
     }
 
     public function waitShutdown(): void
