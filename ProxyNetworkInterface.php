@@ -27,6 +27,7 @@ use pocketmine\Server;
 use pocketmine\snooze\SleeperNotifier;
 use pocketmine\utils\Binary;
 use pocketmine\utils\BinaryDataException;
+use pocketmine\utils\Utils;
 use RuntimeException;
 use Socket;
 use Threaded;
@@ -206,7 +207,7 @@ final class ProxyNetworkInterface implements NetworkInterface
         } catch (PacketHandlingException | BinaryDataException $exception) {
             $this->close($socketId, 'Error handling a Packet (Server)');
 
-            $this->server->getLogger()->logException($exception);
+            $this->server->getLogger()->debug(implode("\n", Utils::printableExceptionInfo($exception)));
         }
     }
 
