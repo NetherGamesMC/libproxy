@@ -7,7 +7,6 @@ namespace libproxy;
 
 use Error;
 use Exception;
-use pmmp\thread\Thread as NativeThread;
 use libproxy\data\LatencyData;
 use libproxy\data\TickSyncPacket;
 use libproxy\protocol\DisconnectPacket;
@@ -16,6 +15,7 @@ use libproxy\protocol\LoginPacket;
 use libproxy\protocol\ProxyPacket;
 use libproxy\protocol\ProxyPacketPool;
 use libproxy\protocol\ProxyPacketSerializer;
+use pmmp\thread\Thread as NativeThread;
 use pmmp\thread\ThreadSafeArray;
 use pocketmine\network\mcpe\convert\TypeConverter;
 use pocketmine\network\mcpe\NetworkSession;
@@ -28,6 +28,7 @@ use pocketmine\plugin\PluginBase;
 use pocketmine\scheduler\ClosureTask;
 use pocketmine\Server;
 use pocketmine\snooze\SleeperHandlerEntry;
+use pocketmine\thread\ThreadCrashException;
 use pocketmine\utils\Binary;
 use pocketmine\utils\BinaryDataException;
 use Socket;
@@ -203,24 +204,35 @@ final class ProxyNetworkInterface implements NetworkInterface
                     $this->receiveBytes += strlen($pk->payload);
                     break;
             }
-        } catch (PacketHandlingException | BinaryDataException $exception) {
+        } catch (PacketHandlingException|BinaryDataException $exception) {
             $this->close($socketId, 'Error handling a Packet (Server)');
 
             $this->server->getLogger()->logException($exception);
         }
     }
 
-    public function close(int $socketId, string $reason, bool $fromThread = false, bool $kicked = false) : void
+    public function tick(): void
+    {
+        if (!$this->proxy->isRunning()) {
+            $e = $this->proxy->getCrashInfo();
+            if ($e !== null) {
+                throw new ThreadCrashException("Proxy crashed", $e);
+            }
+            throw new \Exception("Proxy Thread crashed without crash information");
+        }
+    }
+
+    public function close(int $socketId, string $reason, bool $fromThread = false, bool $kicked = false): void
     {
         static $disconnectGuard = false;
-        if($disconnectGuard) {
+        if ($disconnectGuard) {
             return;
         }
 
         $session = $this->getSession($socketId);
         unset($this->sessions[$socketId]);
 
-        if(!$kicked && $session !== null){
+        if (!$kicked && $session !== null) {
             /**
              * {@link NetworkSession::tryDisconnect()} is calling the current method when calls {@link ProxyPacketSender::close()}
              */
@@ -229,7 +241,7 @@ final class ProxyNetworkInterface implements NetworkInterface
             $disconnectGuard = false;
         }
 
-        if(!$fromThread){
+        if (!$fromThread) {
             $pk = new DisconnectPacket();
             $pk->reason = $reason;
 
