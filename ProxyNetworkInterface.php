@@ -30,7 +30,6 @@ use pocketmine\Server;
 use pocketmine\snooze\SleeperHandlerEntry;
 use pocketmine\utils\Binary;
 use pocketmine\utils\BinaryDataException;
-use RuntimeException;
 use Socket;
 use ThreadedArray;
 use WeakMap;
@@ -295,22 +294,6 @@ final class ProxyNetworkInterface implements NetworkInterface
     public function setName(string $name): void
     {
         //NOPEH
-    }
-
-    /**
-     * @throws Exception
-     */
-    public function tick(): void
-    {
-        if (!$this->proxy->isRunning()) {
-            $e = $this->proxy->getCrashInfo();
-
-            if ($e !== null) {
-                throw new RuntimeException("Proxy crashed: $e");
-            }
-
-            throw new Exception('Proxy Thread crashed without crash information');
-        }
     }
 
     public function shutdown(): void

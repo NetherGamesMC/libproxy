@@ -9,13 +9,10 @@ namespace libproxy;
 use pmmp\thread\ThreadSafeArray;
 use pocketmine\Server;
 use pocketmine\snooze\SleeperHandlerEntry;
-use pocketmine\snooze\SleeperNotifier;
 use pocketmine\thread\log\AttachableThreadSafeLogger;
 use pocketmine\thread\Thread;
 use RuntimeException;
 use Socket;
-use Throwable;
-use function error_get_last;
 use function gc_enable;
 use function ini_set;
 use function register_shutdown_function;
@@ -37,12 +34,8 @@ use const TCP_NODELAY;
 class ProxyThread extends Thread
 {
     public ?string $autoloaderPath = null;
-    /** @var string|null */
-    public ?string $crashInfo = null;
     /** @var AttachableThreadSafeLogger */
     private AttachableThreadSafeLogger $logger;
-    /** @var bool */
-    private bool $cleanShutdown = false;
     /** @var bool */
     private bool $ready = false;
 
@@ -78,38 +71,6 @@ class ProxyThread extends Thread
         $this->setClassLoaders([Server::getInstance()->getLoader()]);
     }
 
-    /**
-     * @return void
-     */
-    public function shutdownHandler(): void
-    {
-        if ($this->cleanShutdown) {
-            $this->logger->info('Proxy Thread: Graceful shutdown complete');
-        } else {
-            $error = error_get_last();
-
-            if ($error === null) {
-                $this->logger->emergency('Proxy shutdown unexpectedly');
-            } else {
-                $this->logger->emergency('Fatal error: ' . $error['message'] . ' in ' . $error['file'] . ' on line ' . $error['line']);
-                $this->setCrashInfo($error['message']);
-            }
-        }
-    }
-
-    private function setCrashInfo(string $info): void
-    {
-        $this->synchronized(function (string $info): void {
-            $this->crashInfo = $info;
-            $this->notify();
-        }, $info);
-    }
-
-    public function getCrashInfo(): ?string
-    {
-        return $this->crashInfo;
-    }
-
     public function shutdown(): void
     {
         $this->isKilled = true;
@@ -119,53 +80,42 @@ class ProxyThread extends Thread
     {
         $this->start($options);
         $this->synchronized(function (): void {
-            while (!$this->ready and $this->crashInfo === null) {
+            while (!$this->ready and $this->getCrashInfo() === null) {
                 $this->wait();
-            }
-            if ($this->crashInfo !== null) {
-                throw new RuntimeException("Proxy failed to start: $this->crashInfo");
             }
         });
     }
 
     protected function onRun(): void
     {
-        try {
-            gc_enable();
-            ini_set('display_errors', '1');
-            ini_set('display_startup_errors', '1');
-            ini_set('memory_limit', '512M');
+        gc_enable();
+        ini_set('display_errors', '1');
+        ini_set('display_startup_errors', '1');
+        ini_set('memory_limit', '512M');
 
-            register_shutdown_function([$this, 'shutdownHandler']);
-
-            if ($this->autoloaderPath !== null) {
-                require $this->autoloaderPath;
-            }
-
-            $proxy = new ProxyServer(
-                $this->logger,
-                $this->createServerSocket(),
-                $this->mainToThreadBuffer,
-                $this->threadToMainBuffer,
-                $this->sleeperEntry,
-                $this->notifySocket,
-            );
-
-            $this->synchronized(function (): void {
-                $this->ready = true;
-                $this->notify();
-            });
-
-            while (!$this->isKilled) {
-                $proxy->tickProcessor();
-            }
-
-            $proxy->waitShutdown();
-            $this->cleanShutdown = true;
-        } catch (Throwable $e) {
-            $this->setCrashInfo($e->getMessage());
-            $this->logger->logException($e);
+        if ($this->autoloaderPath !== null) {
+            require $this->autoloaderPath;
         }
+
+        $proxy = new ProxyServer(
+            $this->logger,
+            $this->createServerSocket(),
+            $this->mainToThreadBuffer,
+            $this->threadToMainBuffer,
+            $this->sleeperEntry,
+            $this->notifySocket,
+        );
+
+        $this->synchronized(function (): void {
+            $this->ready = true;
+            $this->notify();
+        });
+
+        while (!$this->isKilled) {
+            $proxy->tickProcessor();
+        }
+
+        $proxy->waitShutdown();
     }
 
     private function createServerSocket(): Socket
