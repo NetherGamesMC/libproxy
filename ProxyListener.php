@@ -41,6 +41,7 @@ class ProxyListener implements Listener
                 /** @var RequestNetworkSettingsPacket $packet USED TO SIMULATE VANILLA BEHAVIOUR, SINCE IT'S NOT USED BY US */
                 if (!in_array($protocolVersion = $packet->getProtocolVersion(), ProtocolInfo::ACCEPTED_PROTOCOL, true)) {
                     $origin->disconnectIncompatibleProtocol($protocolVersion);
+                    return;
                 }
 
                 if (method_exists($origin, 'setProtocolId')) {
