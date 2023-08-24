@@ -9,8 +9,10 @@ use pocketmine\event\Listener;
 use pocketmine\event\server\DataPacketReceiveEvent;
 use pocketmine\network\mcpe\protocol\NetworkSettingsPacket;
 use pocketmine\network\mcpe\protocol\NetworkStackLatencyPacket;
+use pocketmine\network\mcpe\protocol\ProtocolInfo;
 use pocketmine\network\mcpe\protocol\RequestNetworkSettingsPacket;
 use pocketmine\network\mcpe\protocol\types\CompressionAlgorithm;
+use function in_array;
 use function method_exists;
 
 class ProxyListener implements Listener
@@ -37,6 +39,10 @@ class ProxyListener implements Listener
                 break;
             case RequestNetworkSettingsPacket::NETWORK_ID:
                 /** @var RequestNetworkSettingsPacket $packet USED TO SIMULATE VANILLA BEHAVIOUR, SINCE IT'S NOT USED BY US */
+                if (!in_array($protocolVersion = $packet->getProtocolVersion(), ProtocolInfo::ACCEPTED_PROTOCOL, true)) {
+                    $origin->disconnectIncompatibleProtocol($protocolVersion);
+                }
+
                 if (method_exists($origin, 'setProtocolId')) {
                     $origin->setProtocolId($packet->getProtocolVersion());
                 }
