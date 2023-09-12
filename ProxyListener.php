@@ -40,8 +40,9 @@ class ProxyListener implements Listener
             case RequestNetworkSettingsPacket::NETWORK_ID:
                 /** @var RequestNetworkSettingsPacket $packet USED TO SIMULATE VANILLA BEHAVIOUR, SINCE IT'S NOT USED BY US */
                 $multiProtocol = method_exists($origin, 'setProtocolId');
+                $protocolVersion = $packet->getProtocolVersion();
 
-                if (!in_array($protocolVersion = $packet->getProtocolVersion(), $multiProtocol ? ProtocolInfo::ACCEPTED_PROTOCOL : ProtocolInfo::CURRENT_PROTOCOL, true)) {
+                if (($multiProtocol && !in_array($protocolVersion,  ProtocolInfo::ACCEPTED_PROTOCOL, true)) || !$multiProtocol && $protocolVersion !== ProtocolInfo::CURRENT_PROTOCOL) {
                     $origin->disconnectIncompatibleProtocol($protocolVersion);
                     return;
                 }
