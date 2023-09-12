@@ -18,8 +18,11 @@ use libproxy\protocol\ProxyPacketSerializer;
 use pmmp\thread\Thread as NativeThread;
 use pmmp\thread\ThreadSafeArray;
 use pocketmine\network\mcpe\convert\TypeConverter;
+use pocketmine\network\mcpe\EntityEventBroadcaster;
 use pocketmine\network\mcpe\NetworkSession;
+use pocketmine\network\mcpe\PacketBroadcaster;
 use pocketmine\network\mcpe\protocol\PacketPool;
+use pocketmine\network\mcpe\protocol\serializer\PacketSerializerContext;
 use pocketmine\network\mcpe\raklib\PthreadsChannelReader;
 use pocketmine\network\mcpe\raklib\PthreadsChannelWriter;
 use pocketmine\network\NetworkInterface;
@@ -66,6 +69,13 @@ final class ProxyNetworkInterface implements NetworkInterface
     private PthreadsChannelWriter $mainToThreadWriter;
     /** @var PthreadsChannelReader */
     private PthreadsChannelReader $threadToMainReader;
+
+    /** @var PacketSerializerContext */
+    private PacketSerializerContext $packetSerializerContext;
+    /** @var PacketBroadcaster */
+    private PacketBroadcaster $packetBroadcaster;
+    /** @var EntityEventBroadcaster */
+    private EntityEventBroadcaster $entityEventBroadcaster;
 
     /** @var int */
     private int $receiveBytes = 0;
@@ -118,6 +128,10 @@ final class ProxyNetworkInterface implements NetworkInterface
 
         $this->mainToThreadWriter = new PthreadsChannelWriter($mainToThreadBuffer);
         $this->threadToMainReader = new PthreadsChannelReader($threadToMainBuffer);
+
+        $this->packetSerializerContext = PMUtils::getPacketSerializerContext($server);
+        $this->packetBroadcaster = PMUtils::getPacketBroadcaster($server);
+        $this->entityEventBroadcaster = PMUtils::getEntityEventBroadcaster($server);
 
         PacketPool::getInstance()->registerPacket(new TickSyncPacket());
 
@@ -273,19 +287,14 @@ final class ProxyNetworkInterface implements NetworkInterface
 
     public function createSession(int $socketId, string $ip, int $port): NetworkSession
     {
-        $typeConverter = TypeConverter::getInstance();
-        $packetSerializerContext = $this->server->getPacketSerializerContext($typeConverter);
-        $packetBroadcaster = $this->server->getPacketBroadcaster($packetSerializerContext);
-        $entityEventBroadcaster = $this->server->getEntityEventBroadcaster($packetBroadcaster, $typeConverter);
-
         $session = new NetworkSession(
             $this->server,
             $this->server->getNetwork()->getSessionManager(),
             PacketPool::getInstance(),
-            $packetSerializerContext,
+            $this->packetSerializerContext,
             new ProxyPacketSender($socketId, $this),
-            $packetBroadcaster,
-            $entityEventBroadcaster,
+            $this->packetBroadcaster,
+            $this->entityEventBroadcaster,
             MultiCompressor::getInstance(),
             TypeConverter::getInstance(),
             $ip,
