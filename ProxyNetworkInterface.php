@@ -211,7 +211,7 @@ final class ProxyNetworkInterface implements NetworkInterface
                 case ForwardPacket::NETWORK_ID:
                     /** @var ForwardPacket $pk */
                     if (($session = $this->getSession($socketId)) === null) {
-                        throw new PacketHandlingException('Socket with id (' . $socketId . ") doesn't have a session.");
+                        break; // might be data arriving from the client after the server has closed the connection
                     }
 
                     $session->handleEncoded($pk->payload);
