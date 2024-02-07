@@ -6,6 +6,7 @@ declare(strict_types=1);
 namespace libproxy;
 
 use Error;
+use ErrorException;
 use Exception;
 use libproxy\data\LatencyData;
 use libproxy\data\TickSyncPacket;
@@ -17,12 +18,17 @@ use libproxy\protocol\ProxyPacketPool;
 use libproxy\protocol\ProxyPacketSerializer;
 use pmmp\thread\Thread as NativeThread;
 use pmmp\thread\ThreadSafeArray;
+use pocketmine\network\mcpe\compression\DecompressionException;
+use pocketmine\network\mcpe\compression\ZlibCompressor;
 use pocketmine\network\mcpe\convert\TypeConverter;
 use pocketmine\network\mcpe\EntityEventBroadcaster;
 use pocketmine\network\mcpe\NetworkSession;
 use pocketmine\network\mcpe\PacketBroadcaster;
+use pocketmine\network\mcpe\protocol\PacketDecodeException;
 use pocketmine\network\mcpe\protocol\PacketPool;
+use pocketmine\network\mcpe\protocol\serializer\PacketBatch;
 use pocketmine\network\mcpe\protocol\serializer\PacketSerializerContext;
+use pocketmine\network\mcpe\protocol\types\CompressionAlgorithm;
 use pocketmine\network\mcpe\raklib\PthreadsChannelReader;
 use pocketmine\network\mcpe\raklib\PthreadsChannelWriter;
 use pocketmine\network\NetworkInterface;
@@ -32,12 +38,16 @@ use pocketmine\scheduler\ClosureTask;
 use pocketmine\Server;
 use pocketmine\snooze\SleeperHandlerEntry;
 use pocketmine\thread\ThreadCrashException;
+use pocketmine\timings\Timings;
 use pocketmine\utils\Binary;
 use pocketmine\utils\BinaryDataException;
+use pocketmine\utils\BinaryStream;
 use Socket;
 use ThreadedArray;
 use WeakMap;
+use function base64_encode;
 use function bin2hex;
+use function ord;
 use function socket_close;
 use function socket_create_pair;
 use function socket_last_error;
@@ -46,6 +56,7 @@ use function socket_write;
 use function strlen;
 use function substr;
 use function trim;
+use function zstd_uncompress;
 use const AF_INET;
 use const AF_UNIX;
 use const SOCK_STREAM;
@@ -214,7 +225,7 @@ final class ProxyNetworkInterface implements NetworkInterface
                         break; // might be data arriving from the client after the server has closed the connection
                     }
 
-                    $session->handleEncoded($pk->payload);
+                    $this->handleEncoded($session, $pk->payload);
                     $this->receiveBytes += strlen($pk->payload);
                     break;
             }
@@ -222,6 +233,70 @@ final class ProxyNetworkInterface implements NetworkInterface
             $this->close($socketId, 'Error handling a Packet (Server)');
 
             $this->server->getLogger()->logException($exception);
+        }
+    }
+
+    /**
+     * @throws PacketHandlingException
+     */
+    public function handleEncoded(NetworkSession $session, string $payload): void
+    {
+        if (!(fn() => $this->connected)->call($session)) {
+            return;
+        }
+
+        Timings::$playerNetworkReceive->startTiming();
+        try {
+            (fn() => $this->packetBatchLimiter->decrement())->call($session);
+
+            if (strlen($payload) < 1) {
+                throw new PacketHandlingException("No bytes in payload");
+            }
+
+            Timings::$playerNetworkReceiveDecompress->startTiming();
+            $compressionType = ord($payload[0]);
+            $compressed = substr($payload, 1);
+
+            try {
+                $decompressed = match ($compressionType) {
+                    CompressionAlgorithm::NONE => $compressed,
+                    CompressionAlgorithm::ZLIB => $session->getCompressor()->decompress($compressed),
+                    CompressionAlgorithm::NONE - 1 => ($d = zstd_uncompress($compressed)) === false ? throw new DecompressionException("Failed to decompress packet") : $d,
+                    default => throw new PacketHandlingException("Packet compressed with unexpected compression type $compressionType")
+                };
+            } catch (ErrorException|DecompressionException $e) {
+                $session->getLogger()->debug("Failed to decompress packet: " . base64_encode($compressed));
+                throw PacketHandlingException::wrap($e, "Compressed packet batch decode error");
+            } finally {
+                Timings::$playerNetworkReceiveDecompress->stopTiming();
+            }
+
+            try {
+                $stream = new BinaryStream($decompressed);
+                $count = 0;
+                foreach (PacketBatch::decodeRaw($stream) as $buffer) {
+                    (fn() => $this->gamePacketLimiter->decrement())->call($session);
+                    if (++$count > 100) {
+                        throw new PacketHandlingException("Too many packets in batch");
+                    }
+                    $packet = PacketPool::getInstance()->getPacket($buffer);
+                    if ($packet === null) {
+                        $session->getLogger()->debug("Unknown packet: " . base64_encode($buffer));
+                        throw new PacketHandlingException("Unknown packet received");
+                    }
+                    try {
+                        $session->handleDataPacket($packet, $buffer);
+                    } catch (PacketHandlingException $e) {
+                        $session->getLogger()->debug($packet->getName() . ": " . base64_encode($buffer));
+                        throw PacketHandlingException::wrap($e, "Error processing " . $packet->getName());
+                    }
+                }
+            } catch (PacketDecodeException|BinaryDataException $e) {
+                $session->getLogger()->logException($e);
+                throw PacketHandlingException::wrap($e, "Packet batch decode error");
+            }
+        } finally {
+            Timings::$playerNetworkReceive->stopTiming();
         }
     }
 
@@ -295,20 +370,13 @@ final class ProxyNetworkInterface implements NetworkInterface
             new ProxyPacketSender($socketId, $this),
             $this->packetBroadcaster,
             $this->entityEventBroadcaster,
-            MultiCompressor::getInstance(),
+            ZlibCompressor::getInstance(),
             TypeConverter::getInstance(),
             $ip,
             $port
         );
 
         $this->sessions[$socketId] = $session;
-
-        // Set the LoginPacketHandler, since compression is handled by the proxy
-        (function (): void {
-            /** @noinspection PhpUndefinedFieldInspection */
-            $this->onSessionStartSuccess();
-        })->call($session);
-
         return $session;
     }
 

@@ -11,11 +11,11 @@ use pocketmine\Server;
 use pocketmine\snooze\SleeperHandlerEntry;
 use pocketmine\thread\log\AttachableThreadSafeLogger;
 use pocketmine\thread\Thread;
+use pocketmine\utils\Utils;
 use RuntimeException;
 use Socket;
 use function gc_enable;
 use function ini_set;
-use function register_shutdown_function;
 use function socket_bind;
 use function socket_create;
 use function socket_last_error;
@@ -134,8 +134,14 @@ class ProxyThread extends Thread
         if (!socket_listen($serverSocket, 10)) {
             throw new RuntimeException("Failed to listen to socket: " . socket_strerror(socket_last_error($serverSocket)));
         }
-        if (!socket_set_option($serverSocket, SOL_SOCKET, SO_SNDBUF, 8 * 1024 * 1024) || !socket_set_option($serverSocket, SOL_SOCKET, SO_RCVBUF, 8 * 1024 * 1024) || !socket_set_option($serverSocket, SOL_TCP, TCP_NODELAY, 1)) {
+        if (!socket_set_option($serverSocket, SOL_TCP, TCP_NODELAY, 1)) {
             throw new RuntimeException("Failed to set option on socket: " . socket_strerror(socket_last_error($serverSocket)));
+        }
+
+        if (Utils::getOS() !== Utils::OS_MACOS) {
+            if (!socket_set_option($serverSocket, SOL_SOCKET, SO_SNDBUF, 8 * 1024 * 1024) || !socket_set_option($serverSocket, SOL_SOCKET, SO_RCVBUF, 8 * 1024 * 1024)) {
+                throw new RuntimeException("Failed to set option on socket: " . socket_strerror(socket_last_error($serverSocket)));
+            }
         }
 
         return $serverSocket;

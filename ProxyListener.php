@@ -27,41 +27,14 @@ class ProxyListener implements Listener
         $origin = $event->getOrigin();
         $packet = $event->getPacket();
 
-        switch ($packet->pid()) {
-            case NetworkStackLatencyPacket::NETWORK_ID:
-                /** @var NetworkStackLatencyPacket $packet USED FOR PING CALCULATIONS */
-                if ($packet->timestamp === 0 && $packet->needResponse) {
-                    if (($player = $origin->getPlayer()) !== null && $player->isConnected()) {
-                        $origin->sendDataPacket(NetworkStackLatencyPacket::response(0));
-                    }
-                    $event->cancel();
+        /** @var NetworkStackLatencyPacket $packet USED FOR PING CALCULATIONS */
+        if ($packet->pid() == NetworkStackLatencyPacket::NETWORK_ID) {
+            if ($packet->timestamp === 0 && $packet->needResponse) {
+                if (($player = $origin->getPlayer()) !== null && $player->isConnected()) {
+                    $origin->sendDataPacket(NetworkStackLatencyPacket::response(0));
                 }
-                break;
-            case RequestNetworkSettingsPacket::NETWORK_ID:
-                /** @var RequestNetworkSettingsPacket $packet USED TO SIMULATE VANILLA BEHAVIOUR, SINCE IT'S NOT USED BY US */
-                $multiProtocol = method_exists($origin, 'setProtocolId');
-                $protocolVersion = $packet->getProtocolVersion();
-
-                if (($multiProtocol && !in_array($protocolVersion,  ProtocolInfo::ACCEPTED_PROTOCOL, true)) || !$multiProtocol && $protocolVersion !== ProtocolInfo::CURRENT_PROTOCOL) {
-                    $origin->disconnectIncompatibleProtocol($protocolVersion);
-                    return;
-                }
-
-                if ($multiProtocol) {
-                    $origin->setProtocolId($packet->getProtocolVersion());
-                }
-
-                $origin->sendDataPacket(NetworkSettingsPacket::create(
-                    NetworkSettingsPacket::COMPRESS_EVERYTHING,
-                    CompressionAlgorithm::ZLIB,
-                    false,
-                    0,
-                    0
-                ), true);
-
                 $event->cancel();
-                break;
+            }
         }
-
     }
 }
