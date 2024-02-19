@@ -4,133 +4,193 @@ declare(strict_types=1);
 
 namespace libproxy;
 
-use ErrorException;
 use libproxy\protocol\DisconnectPacket;
 use libproxy\protocol\ForwardPacket;
 use libproxy\protocol\LoginPacket;
 use libproxy\protocol\ProxyPacket;
 use libproxy\protocol\ProxyPacketPool;
 use libproxy\protocol\ProxyPacketSerializer;
+use NetherGames\Quiche\io\QueueWriter;
+use NetherGames\Quiche\QuicheConnection;
+use NetherGames\Quiche\socket\QuicheServerSocket;
+use NetherGames\Quiche\SocketAddress;
+use NetherGames\Quiche\stream\BiDirectionalQuicheStream;
+use NetherGames\Quiche\stream\QuicheStream;
 use pmmp\thread\ThreadSafeArray;
 use pocketmine\network\mcpe\raklib\PthreadsChannelReader;
 use pocketmine\network\mcpe\raklib\SnoozeAwarePthreadsChannelWriter;
 use pocketmine\network\PacketHandlingException;
+use pocketmine\snooze\SleeperHandler;
 use pocketmine\snooze\SleeperHandlerEntry;
-use pocketmine\snooze\SleeperNotifier;
 use pocketmine\thread\log\AttachableThreadSafeLogger;
 use pocketmine\utils\Binary;
 use pocketmine\utils\BinaryDataException;
-use pocketmine\utils\Utils;
-use raklib\generic\SocketException;
 use Socket;
-use function count;
-use function min;
-use function socket_accept;
-use function socket_close;
-use function socket_getpeername;
-use function socket_last_error;
+use function array_keys;
+use function getenv;
 use function socket_read;
-use function socket_recv;
-use function socket_select;
-use function socket_set_option;
-use function socket_shutdown;
-use function socket_strerror;
-use function socket_write;
+use function spl_object_id;
 use function strlen;
-use function trim;
-use const MSG_DONTWAIT;
-use const MSG_WAITALL;
-use const SO_LINGER;
-use const SO_RCVTIMEO;
-use const SO_SNDTIMEO;
-use const SOCKET_EWOULDBLOCK;
-use const SOL_SOCKET;
+use function substr;
 
 class ProxyServer
 {
-    private const SERVER_SOCKET = -1;
-    private const NOTIFY_SOCKET = -2;
+    public const PING_SYNC_INTERVAL = 2;
 
-    private const MAX_FRAME_LENGTH = 65535;
-
-    private const LENGTH_NEEDED = 0;
-    private const BUFFER = 1;
-
-    /** @var AttachableThreadSafeLogger */
-    private AttachableThreadSafeLogger $logger;
     /** @var PthreadsChannelReader */
     private PthreadsChannelReader $mainToThreadReader;
     /** @var SnoozeAwarePthreadsChannelWriter */
     private SnoozeAwarePthreadsChannelWriter $threadToMainWriter;
+    private QuicheServerSocket $serverSocket;
 
-    /** @var Socket */
-    private Socket $serverSocket;
-    /** @var Socket */
-    private Socket $notifySocket;
+    /** @var SleeperHandler */
+    private SleeperHandler $sleeperHandler;
 
-    /** @var Socket[] */
-    private array $sockets = [];
-    /** @phpstan-var array<int, array<int|string>> */
+    /** @var array<int, QueueWriter> */
+    private array $streamWriters = [];
+    /** @var array<int, int> */
+    private array $connectionIdByStreamId = [];
+    /** @var array<int, QuicheConnection> */
+    private array $connections = [];
+    /** @var array<int, BiDirectionalQuicheStream> */
+    private array $streams = [];
+
+    /** @phpstan-var array<int, string> */
     private array $socketBuffer = [];
+    /** @phpstan-var array<int, int> */
+    private array $socketBufferLengthNeeded = [];
 
-    /** @var int */
-    private int $socketId = 0;
+    private int $streamIdentifier = 0;
 
-    public function __construct(AttachableThreadSafeLogger $logger, Socket $serverSocket, ThreadSafeArray $mainToThreadBuffer, ThreadSafeArray $threadToMainBuffer, SleeperHandlerEntry $sleeperEntry, Socket $notifySocket)
+    public function __construct(
+        private readonly AttachableThreadSafeLogger $logger,
+        SocketAddress                               $serverAddress,
+        ThreadSafeArray                             $mainToThreadBuffer,
+        ThreadSafeArray                             $threadToMainBuffer,
+        SleeperHandlerEntry                         $sleeperEntry,
+        Socket                                      $notifySocket
+    )
     {
-        $this->logger = $logger;
-        $this->serverSocket = $serverSocket;
-        $this->notifySocket = $notifySocket;
+        $this->sleeperHandler = new SleeperHandler();
+        $this->serverSocket = $this->createServerSocket($serverAddress, $notifySocket);
 
         $this->mainToThreadReader = new PthreadsChannelReader($mainToThreadBuffer);
         $this->threadToMainWriter = new SnoozeAwarePthreadsChannelWriter($threadToMainBuffer, $sleeperEntry->createNotifier());
     }
 
-    public function waitShutdown(): void
+    private function createServerSocket(SocketAddress $socketAddress, Socket $notifySocket): QuicheServerSocket
     {
-        foreach ($this->sockets as $socketId => $socket) {
-            $this->closeSocket($socketId, "server shutdown", true);
+        $serverSocket = new QuicheServerSocket([$socketAddress], function (QuicheConnection $connection, ?QuicheStream $stream): void {
+            if ($stream instanceof BiDirectionalQuicheStream) {
+                $streamIdentifier = $this->streamIdentifier++;
+                $peerAddress = $connection->getPeerAddress();
+
+                $this->streamWriters[$streamIdentifier] = $stream->setupWriter();
+                $this->connectionIdByStreamId[$streamIdentifier] = spl_object_id($connection);
+                $this->streams[$streamIdentifier] = $stream;
+
+                $pk = new LoginPacket();
+                $pk->ip = $peerAddress->getAddress();
+                $pk->port = $peerAddress->getPort();
+                $this->sendToMainBuffer($streamIdentifier, $pk);
+
+                $stream->setShutdownReadingCallback(function (bool $peerClosed) use ($streamIdentifier): void {
+                    if ($peerClosed) {
+                        if (isset($this->streamWriters[$streamIdentifier])) { // check if the stream is still open
+                            $this->shutdownStream($streamIdentifier, 'client disconnect', false);
+                        }
+                    } else {
+                        $this->onStreamShutdown($streamIdentifier);
+                    }
+                });
+
+                $stream->setOnDataArrival(function (string $data) use ($streamIdentifier): void {
+                    $this->onDataReceive($streamIdentifier, $data);
+                });
+            } else if ($stream === null) {
+                $this->connections[$connectionId = spl_object_id($connection)] = $connection;
+
+                $connection->setPeerCloseCallback(function () use ($connectionId): void {
+                    unset($this->connections[$connectionId]);
+                });
+            } else {
+                throw new \RuntimeException('Invalid stream type');
+            }
+        });
+
+        $keyPath = getenv("KEY_PATH");
+        $certPath = getenv("CERT_PATH");
+
+        if ($keyPath === false || $certPath === false || !file_exists($keyPath) || !file_exists($certPath)) {
+            throw new \RuntimeException("KEY_PATH or CERT_PATH not set");
         }
 
-        while (count($this->sockets) > 0) {
-            $this->tickProcessor();
-        }
+        $serverConfig = $serverSocket->getConfig();
+        $serverConfig->loadPrivKeyFromFile($keyPath);
+        $serverConfig->loadCertChainFromFile($certPath);
+        $serverConfig->setApplicationProtos(['ng']);
+        $serverConfig->setVerifyPeer(false);
+        $serverConfig->enableBidirectionalStreams();
+        $serverConfig->setInitialMaxData(10000000);
+        $serverConfig->setMaxIdleTimeout(2000);
 
-        @socket_close($this->serverSocket);
-        @socket_close($this->notifySocket);
+        $serverSocket->registerSocket($notifySocket, function () use ($notifySocket): void {
+            socket_read($notifySocket, 65535); //clean socket
+            $this->pushSockets();
+        });
+
+        return $serverSocket;
     }
 
-    private function closeSocket(int $socketId, string $reason, bool $fromMain = false): void
+    public function waitShutdown(): void
     {
-        if (($socket = $this->getSocket($socketId)) !== null) {
-            try {
-                socket_shutdown($socket);
-            } catch (ErrorException $exception) {
-                $this->logger->debug('Socket is not connected anymore.');
-            }
-            socket_close($socket);
-            unset($this->sockets[$socketId], $this->socketBuffer[$socketId]);
+        foreach (array_keys($this->streamWriters) as $streamIdentifier) {
+            $this->shutdownStream($streamIdentifier, 'server shutdown', true);
         }
 
-        $this->logger->debug("Disconnected socket with id " . $socketId);
+        $this->serverSocket->close(false, 0, 'server shutdown');
+    }
 
+    private function onStreamShutdown(int $streamIdentifier): void
+    {
+        unset($this->streamWriters[$streamIdentifier], $this->connectionIdByStreamId[$streamIdentifier], $this->streams[$streamIdentifier]);
+    }
+
+    public function getTickSleeper(): SleeperHandler
+    {
+        return $this->sleeperHandler;
+    }
+
+    private function getStreamWriter(int $streamIdentifier): ?QueueWriter
+    {
+        return $this->streamWriters[$streamIdentifier] ?? null;
+    }
+
+    private function shutdownStream(int $streamIdentifier, string $reason, bool $fromMain): void
+    {
         if (!$fromMain) {
             $pk = new DisconnectPacket();
             $pk->reason = $reason;
 
-            $this->putPacket($socketId, $pk);
+            $this->sendToMainBuffer($streamIdentifier, $pk);
+        }
+
+        if (($stream = $this->streams[$streamIdentifier] ?? null) !== null) {
+            if ($stream->isReadable()) {
+                $stream->shutdownReading();
+            }
+            if ($stream->isWritable()) {
+                $stream->gracefulShutdownWriting();
+            }
+
+            $this->onStreamShutdown($streamIdentifier);
         }
     }
 
-    public function getSocket(int $socketId): ?Socket
-    {
-        return $this->sockets[$socketId] ?? null;
-    }
-
-    private function putPacket(int $socketId, ProxyPacket $pk): void
+    private function sendToMainBuffer(int $streamIdentifier, ProxyPacket $pk): void
     {
         $serializer = new ProxyPacketSerializer();
-        $serializer->putLInt($socketId);
+        $serializer->putLInt($streamIdentifier);
 
         $pk->encode($serializer);
 
@@ -139,34 +199,14 @@ class ProxyServer
 
     public function tickProcessor(): void
     {
-        $read = $this->sockets;
-        $read[self::SERVER_SOCKET] = $this->serverSocket;
-        $read[self::NOTIFY_SOCKET] = $this->notifySocket;
-
-        $write = null;
-        $except = null;
-
-        $select = socket_select($read, $write, $except, 5);
-        if ($select !== false && $select > 0) {
-            foreach ($read as $socketId => $socket) {
-                /** @var int $socketId */
-                if ($socketId === self::NOTIFY_SOCKET) {
-                    socket_read($socket, self::MAX_FRAME_LENGTH); //clean socket
-                    $this->pushSockets();
-                } elseif ($socketId === self::SERVER_SOCKET) {
-                    $this->onServerSocketReceive();
-                } else {
-                    $this->onSocketReceive($socketId);
-                }
-            }
-        }
+        $this->serverSocket->selectSockets(50);
     }
 
     private function pushSockets(): void
     {
         while (($payload = $this->mainToThreadReader->read()) !== null) {
             $stream = new ProxyPacketSerializer($payload);
-            $socketId = $stream->getLInt();
+            $streamIdentifier = $stream->getLInt();
 
             if (($pk = ProxyPacketPool::getInstance()->getPacket($payload, $stream->getOffset())) === null) {
                 throw new PacketHandlingException('Packet does not exist');
@@ -175,149 +215,69 @@ class ProxyServer
             try {
                 $pk->decode($stream);
             } catch (BinaryDataException $e) {
-                $this->logger->debug('Closed socket with id(' . $socketId . ') because packet was invalid.');
-                $this->closeSocket($socketId, 'Invalid Packet');
+                $this->logger->debug('Closed stream with id(' . $streamIdentifier . ') because server sent invalid packet');
+                $this->shutdownStream($streamIdentifier, 'invalid packet', false);
                 return;
             }
 
-            try {
-                switch ($pk->pid()) {
-                    case DisconnectPacket::NETWORK_ID:
-                        /** @var DisconnectPacket $pk */
-                        if ($this->getSocket($socketId) !== null) {
-                            $this->closeSocket($socketId, $pk->reason, true);
-                        }
-                        break;
-                    case ForwardPacket::NETWORK_ID:
-                        /** @var ForwardPacket $pk */
-                        if (($socket = $this->getSocket($socketId)) === null) {
-                            throw new PacketHandlingException('Socket with id (' . $socketId . ") doesn't exist.");
-                        }
+            switch ($pk->pid()) {
+                case DisconnectPacket::NETWORK_ID:
+                    /** @var DisconnectPacket $pk */
+                    if ($this->getStreamWriter($streamIdentifier) !== null) {
+                        $this->shutdownStream($streamIdentifier, $pk->reason, true);
+                    }
+                    break;
+                case ForwardPacket::NETWORK_ID:
+                    /** @var ForwardPacket $pk */
+                    if (($writer = $this->getStreamWriter($streamIdentifier)) === null) {
+                        $this->shutdownStream($streamIdentifier, 'stream not found', false);
+                        return;
+                    }
 
-                        try {
-                            if (socket_write($socket, Binary::writeInt(strlen($pk->payload)) . $pk->payload) === false) {
-                                throw new PacketHandlingException('client disconnect');
-                            }
-                        } catch (ErrorException $exception) {
-                            throw PacketHandlingException::wrap($exception, 'client disconnect');
-                        }
-                        break;
-                }
-            } catch (PacketHandlingException $exception) {
-                $this->closeSocket($socketId, $exception->getMessage());
+                    $writer->write(Binary::writeInt(strlen($pk->payload)) . $pk->payload);
+                    break;
             }
         }
     }
 
-    private function onServerSocketReceive(): void
+    private function onDataReceive(int $socketIdentifier, string $data): void
     {
-        $socket = socket_accept($this->serverSocket);
-        if ($socket === false) {
-            $this->logger->debug("Couldn't accept new socket request: " . socket_strerror(socket_last_error($this->serverSocket)));
+        if (isset($this->socketBuffer[$socketIdentifier])) {
+            $this->socketBuffer[$socketIdentifier] .= $data;
         } else {
-            try {
-                if (socket_getpeername($socket, $ip, $port)) {
-                    $this->sockets[$socketId = $this->socketId++] = $socket;
+            $this->socketBuffer[$socketIdentifier] = $data;
+        }
 
-                    $this->logger->debug('Socket(' . $socketId . ') created a session from ' . $ip . ':' . $port);
+        while (true) {
+            $buffer = $this->socketBuffer[$socketIdentifier];
+            $length = strlen($buffer);
+            $lengthNeeded = $this->socketBufferLengthNeeded[$socketIdentifier] ?? null;
 
-                    socket_set_option($socket, SOL_SOCKET, SO_LINGER, ["l_onoff" => 1, "l_linger" => 0]);
-                    socket_set_option($socket, SOL_SOCKET, SO_SNDTIMEO, ["sec" => 4, "usec" => 0]);
-                    socket_set_option($socket, SOL_SOCKET, SO_RCVTIMEO, ["sec" => 4, "usec" => 0]);
-
-                    $pk = new LoginPacket();
-                    $pk->ip = $ip;
-                    $pk->port = $port;
-
-                    $this->putPacket($socketId, $pk);
+            if ($lengthNeeded === null) {
+                if ($length < 4) { // first 4 bytes are the length of the packet
+                    return; // wait for more data
                 } else {
-                    $this->logger->debug('New socket request already disconnected: ' . socket_strerror(socket_last_error($this->serverSocket)));
+                    try {
+                        $packetLength = Binary::readInt(substr($buffer, 0, 4));
+                    } catch (BinaryDataException $exception) {
+                        $this->shutdownStream($socketIdentifier, 'invalid packet', false);
+                        return;
+                    }
+
+                    $this->socketBufferLengthNeeded[$socketIdentifier] = $packetLength;
+                    $this->socketBuffer[$socketIdentifier] = substr($buffer, 4);
                 }
-            } catch (ErrorException $exception) {
-                $this->logger->debug('New socket request already disconnected: ' . socket_strerror(socket_last_error($this->serverSocket)));
+            } else if ($length >= $lengthNeeded) {
+                $pk = new ForwardPacket();
+                $pk->payload = substr($buffer, 0, $lengthNeeded);
+
+                $this->sendToMainBuffer($socketIdentifier, $pk);
+
+                $this->socketBuffer[$socketIdentifier] = substr($buffer, $lengthNeeded);
+                unset($this->socketBufferLengthNeeded[$socketIdentifier]);
+            } else {
+                return; // wait for more data
             }
         }
-    }
-
-    private function onSocketReceive(int $socketId): void
-    {
-        $rawFrameData = null;
-
-        try {
-            if (isset($this->socketBuffer[$socketId])) {
-                /** @var int $length */
-                /** @var string $buffer */
-                [$length, $buffer] = $this->socketBuffer[$socketId];
-
-                $rawFrameData = $this->readBytes($socketId, $length, $buffer);
-            } elseif (($rawFrameLength = $this->readBytes($socketId, 4)) !== null) {
-                try {
-                    $packetLength = Binary::readInt($rawFrameLength);
-                } catch (BinaryDataException $exception) {
-                    throw new SocketException('Not enough bytes to read', 0, $exception);
-                }
-
-                $this->socketBuffer[$socketId] = [
-                    self::LENGTH_NEEDED => $packetLength,
-                    self::BUFFER => '',
-                ];
-
-                $rawFrameData = $this->readBytes($socketId, $packetLength);
-            }
-        } catch (SocketException $exception) {
-            $this->closeSocket($socketId, $exception->getMessage());
-            $this->logger->debug('Socket(' . $socketId . ') returned ' . $exception->getMessage());
-            return;
-        }
-
-        // A null frame data indicates that there is not enough bytes to read.
-        if ($rawFrameData !== null) {
-            unset($this->socketBuffer[$socketId]);
-
-            $pk = new ForwardPacket();
-            $pk->payload = $rawFrameData;
-
-            $this->putPacket($socketId, $pk);
-        }
-    }
-
-    private function readBytes(int $socketId, int $remainingLength, string $previousBuffer = ''): ?string
-    {
-        /** @var Socket $socket */
-        $socket = $this->getSocket($socketId);
-
-        $length = min(self::MAX_FRAME_LENGTH, $remainingLength);
-        if (Utils::getOS() === Utils::OS_WINDOWS) {
-            // Honestly I do not think this is a problem since we are not going to deploy
-            // windows as our "production" nodes.
-            $receivedLength = @socket_recv($socket, $buffer, $length, MSG_WAITALL);
-        } else {
-            $receivedLength = @socket_recv($socket, $buffer, $length, MSG_DONTWAIT);
-        }
-
-        if (!$receivedLength) {
-            $errno = socket_last_error($socket);
-            if ($errno === SOCKET_EWOULDBLOCK) {
-                return null;
-            }
-            // Indicates that the socket was closed.
-            if ($errno === 0) {
-                throw new SocketException("client disconnect");
-            }
-
-            // Otherwise throw an exception as normal.
-            throw new SocketException(strtolower(trim(socket_strerror($errno))) . " (errno $errno)", $errno);
-        }
-
-        if ($remainingLength === $receivedLength) {
-            return $previousBuffer . $buffer;
-        }
-
-        $this->socketBuffer[$socketId] = [
-            self::LENGTH_NEEDED => $remainingLength - $receivedLength,
-            self::BUFFER => $previousBuffer . $buffer,
-        ];
-
-        return null;
     }
 }
