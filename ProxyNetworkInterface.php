@@ -27,7 +27,6 @@ use pocketmine\network\mcpe\PacketBroadcaster;
 use pocketmine\network\mcpe\protocol\PacketDecodeException;
 use pocketmine\network\mcpe\protocol\PacketPool;
 use pocketmine\network\mcpe\protocol\serializer\PacketBatch;
-use pocketmine\network\mcpe\protocol\serializer\PacketSerializerContext;
 use pocketmine\network\mcpe\protocol\types\CompressionAlgorithm;
 use pocketmine\network\mcpe\raklib\PthreadsChannelReader;
 use pocketmine\network\mcpe\raklib\PthreadsChannelWriter;
@@ -81,8 +80,6 @@ final class ProxyNetworkInterface implements NetworkInterface
     /** @var PthreadsChannelReader */
     private PthreadsChannelReader $threadToMainReader;
 
-    /** @var PacketSerializerContext */
-    private PacketSerializerContext $packetSerializerContext;
     /** @var PacketBroadcaster */
     private PacketBroadcaster $packetBroadcaster;
     /** @var EntityEventBroadcaster */
@@ -140,7 +137,6 @@ final class ProxyNetworkInterface implements NetworkInterface
         $this->mainToThreadWriter = new PthreadsChannelWriter($mainToThreadBuffer);
         $this->threadToMainReader = new PthreadsChannelReader($threadToMainBuffer);
 
-        $this->packetSerializerContext = PMUtils::getPacketSerializerContext($server);
         $this->packetBroadcaster = PMUtils::getPacketBroadcaster($server);
         $this->entityEventBroadcaster = PMUtils::getEntityEventBroadcaster($server);
 
@@ -366,7 +362,6 @@ final class ProxyNetworkInterface implements NetworkInterface
             $this->server,
             $this->server->getNetwork()->getSessionManager(),
             PacketPool::getInstance(),
-            $this->packetSerializerContext,
             new ProxyPacketSender($socketId, $this),
             $this->packetBroadcaster,
             $this->entityEventBroadcaster,
