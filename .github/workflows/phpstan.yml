@@ -16,7 +16,7 @@ jobs:
         with:
           file: PHP-Linux-x86_64-PM5.tar.gz
           repo: NetherGamesMC/php-build-scripts
-          version: "tags/php-8.3-latest"
+          version: "tags/php-8.3-ffi-latest"
           token: ${{ secrets.GITHUB_TOKEN }}
       - name: Unpack PHP Release
         run: tar -xzvf PHP-Linux-x86_64-PM5.tar.gz
@@ -27,6 +27,8 @@ jobs:
           token: ${{ secrets.ng_token }}
           path: PharBuilder
           ref: pm5
+      - name: Install libFFI
+        run: sudo apt install libffi7
       - name: Download Composer
         run: curl -o composer.phar "https://getcomposer.org/composer-stable.phar"
       - name: Add Composer GitHub access token
