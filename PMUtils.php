@@ -6,7 +6,7 @@ use Exception;
 use pocketmine\network\mcpe\convert\TypeConverter;
 use pocketmine\network\mcpe\EntityEventBroadcaster;
 use pocketmine\network\mcpe\PacketBroadcaster;
-use pocketmine\network\mcpe\protocol\serializer\PacketSerializerContext;
+use pocketmine\network\mcpe\protocol\ProtocolInfo;
 use pocketmine\network\mcpe\raklib\RakLibInterface;
 use pocketmine\Server;
 use ReflectionClass;
@@ -14,24 +14,10 @@ use function method_exists;
 
 class PMUtils
 {
-    public static function getPacketSerializerContext(Server $server): PacketSerializerContext
-    {
-        if (method_exists($server, 'getPacketSerializerContext')) {
-            return $server->getPacketSerializerContext(TypeConverter::getInstance());
-        }
-
-        $packetSerializerContext = self::getRaklibInterfacePropertyValue($server, 'packetSerializerContext');
-        if ($packetSerializerContext instanceof PacketSerializerContext) {
-            return $packetSerializerContext;
-        }
-
-        throw new Exception("PacketSerializerContext isn't valid");
-    }
-
     public static function getPacketBroadcaster(Server $server): PacketBroadcaster
     {
         if (method_exists($server, 'getPacketBroadcaster')) {
-            return $server->getPacketBroadcaster(self::getPacketSerializerContext($server));
+            return $server->getPacketBroadcaster(ProtocolInfo::CURRENT_PROTOCOL);
         }
 
         $packetBroadcaster = self::getRaklibInterfacePropertyValue($server, 'packetBroadcaster');
