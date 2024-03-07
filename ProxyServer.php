@@ -48,15 +48,12 @@ use function chr;
 use function getenv;
 use function ord;
 use function socket_read;
-use function spl_object_id;
 use function strlen;
 use function substr;
 use function zstd_uncompress;
 
 class ProxyServer
 {
-    public const PING_SYNC_INTERVAL = 2;
-
     /** @var PthreadsChannelReader */
     private PthreadsChannelReader $mainToThreadReader;
     /** @var SnoozeAwarePthreadsChannelWriter */
@@ -68,10 +65,6 @@ class ProxyServer
 
     /** @var array<int, QueueWriter> */
     private array $streamWriters = [];
-    /** @var array<int, int> */
-    private array $connectionIdByStreamId = [];
-    /** @var array<int, QuicheConnection> */
-    private array $connections = [];
     /** @var array<int, BiDirectionalQuicheStream> */
     private array $streams = [];
 
@@ -113,7 +106,6 @@ class ProxyServer
                 $peerAddress = $connection->getPeerAddress();
 
                 $this->streamWriters[$streamIdentifier] = $stream->setupWriter();
-                $this->connectionIdByStreamId[$streamIdentifier] = spl_object_id($connection);
                 $this->streams[$streamIdentifier] = $stream;
 
                 $pk = new LoginPacket();
@@ -132,16 +124,10 @@ class ProxyServer
                 });
 
                 $stream->setOnDataArrival(function (string $data) use ($streamIdentifier): void {
-                    $this->onDataReceive($streamIdentifier, $data);
+                    if (isset($this->streams[$streamIdentifier])) {
+                        $this->onDataReceive($streamIdentifier, $data);
+                    }
                 });
-            } else if ($stream === null) {
-                $this->connections[$connectionId = spl_object_id($connection)] = $connection;
-
-                $connection->setPeerCloseCallback(function () use ($connectionId): void {
-                    unset($this->connections[$connectionId]);
-                });
-            } else {
-                throw new \RuntimeException('Invalid stream type');
             }
         });
 
@@ -182,7 +168,6 @@ class ProxyServer
     {
         unset(
             $this->streamWriters[$streamIdentifier],
-            $this->connectionIdByStreamId[$streamIdentifier],
             $this->streams[$streamIdentifier],
             $this->gamePacketLimiter[$streamIdentifier],
             $this->batchPacketLimiter[$streamIdentifier],
@@ -220,9 +205,6 @@ class ProxyServer
         }
 
         if (($stream = $this->streams[$streamIdentifier] ?? null) !== null) {
-            if ($stream->isReadable()) {
-                $stream->shutdownReading();
-            }
             if ($stream->isWritable()) {
                 $stream->gracefulShutdownWriting();
             }
