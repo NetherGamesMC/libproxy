@@ -20,13 +20,6 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
       - name: Unpack PHP Release
         run: tar -xzvf PHP-Linux-x86_64-PM5.tar.gz
-      - name: Checkout PharBuilder
-        uses: actions/checkout@v3
-        with:
-          repository: NetherGamesMC/PharBuilder
-          token: ${{ secrets.ng_token }}
-          path: PharBuilder
-          ref: pm5
       - name: Install libFFI
         run: sudo apt install libffi7
       - name: Download Composer
