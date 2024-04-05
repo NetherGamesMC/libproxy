@@ -274,7 +274,7 @@ final class ProxyNetworkInterface implements NetworkInterface
         return $this->sessions[$socketId] ?? null;
     }
 
-    public function putPacket(int $socketId, ProxyPacket $pk): void
+    public function putPacket(int $socketId, ProxyPacket $pk, int $receiptId = null): void
     {
         $serializer = new ProxyPacketSerializer();
         $serializer->putLInt($socketId);
@@ -288,6 +288,10 @@ final class ProxyNetworkInterface implements NetworkInterface
             socket_write($this->threadNotifier, "\x00"); // wakes up the socket_select function
         } catch (Error $exception) {
             $this->server->getLogger()->debug('Packet was send while the client was already shut down');
+        }
+
+        if ($receiptId !== null) { // TODO: check if QUIC supports acks on specific data ;l
+            $this->getSession($socketId)?->handleAckReceipt($receiptId);
         }
     }
 
