@@ -9,6 +9,7 @@ use Error;
 use Exception;
 use libproxy\data\LatencyData;
 use libproxy\data\TickSyncPacket;
+use libproxy\protocol\AckPacket;
 use libproxy\protocol\DisconnectPacket;
 use libproxy\protocol\ForwardPacket;
 use libproxy\protocol\LoginPacket;
@@ -223,6 +224,14 @@ final class ProxyNetworkInterface implements NetworkInterface
                     }
                     $this->receiveBytes += strlen($pk->payload);
                     break;
+                case AckPacket::NETWORK_ID:
+                    /** @var AckPacket $pk */
+                    if (($session = $this->getSession($socketId)) === null || !(fn() => $this->connected)->call($session)) {
+                        break; // might be data arriving from the client after the server has closed the connection
+                    }
+
+                    $session->handleAckReceipt($pk->receiptId);
+                    break;
             }
         } catch (PacketHandlingException|BinaryDataException $exception) {
             $this->close($socketId, 'Error handling a Packet (Server)');
@@ -274,7 +283,7 @@ final class ProxyNetworkInterface implements NetworkInterface
         return $this->sessions[$socketId] ?? null;
     }
 
-    public function putPacket(int $socketId, ProxyPacket $pk, int $receiptId = null): void
+    public function putPacket(int $socketId, ProxyPacket $pk): void
     {
         $serializer = new ProxyPacketSerializer();
         $serializer->putLInt($socketId);
@@ -288,10 +297,6 @@ final class ProxyNetworkInterface implements NetworkInterface
             socket_write($this->threadNotifier, "\x00"); // wakes up the socket_select function
         } catch (Error $exception) {
             $this->server->getLogger()->debug('Packet was send while the client was already shut down');
-        }
-
-        if ($receiptId !== null) { // TODO: check if QUIC supports acks on specific data ;l
-            $this->getSession($socketId)?->handleAckReceipt($receiptId);
         }
     }
 

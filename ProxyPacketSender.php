@@ -7,6 +7,7 @@ namespace libproxy;
 
 
 use libproxy\protocol\ForwardPacket;
+use libproxy\protocol\ForwardReceiptPacket;
 use pocketmine\network\mcpe\PacketSender;
 
 class ProxyPacketSender implements PacketSender
@@ -29,10 +30,15 @@ class ProxyPacketSender implements PacketSender
     public function send(string $payload, bool $immediate, ?int $receiptId): void
     {
         if (!$this->closed) {
-            $pk = new ForwardPacket();
+            if ($receiptId === null) {
+                $pk = new ForwardPacket();
+            } else {
+                $pk = new ForwardReceiptPacket();
+                $pk->receiptId = $receiptId;
+            }
             $pk->payload = $payload;
 
-            $this->handler->putPacket($this->socketId, $pk, $receiptId);
+            $this->handler->putPacket($this->socketId, $pk);
         }
     }
 

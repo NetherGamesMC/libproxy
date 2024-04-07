@@ -24,6 +24,8 @@ class ProxyPacketPool
         $this->registerPacket(new LoginPacket());
         $this->registerPacket(new DisconnectPacket());
         $this->registerPacket(new ForwardPacket());
+        $this->registerPacket(new ForwardReceiptPacket());
+        $this->registerPacket(new AckPacket());
     }
 
     public function registerPacket(ProxyPacket $packet): void

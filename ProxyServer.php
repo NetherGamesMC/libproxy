@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace libproxy;
 
 use ErrorException;
+use libproxy\protocol\AckPacket;
 use libproxy\protocol\DisconnectPacket;
 use libproxy\protocol\ForwardPacket;
+use libproxy\protocol\ForwardReceiptPacket;
 use libproxy\protocol\LoginPacket;
 use libproxy\protocol\ProxyPacket;
 use libproxy\protocol\ProxyPacketPool;
@@ -257,8 +259,27 @@ class ProxyServer
                     /** @var ForwardPacket $pk */
                     $this->sendPayload($streamIdentifier, $pk->payload);
                     break;
+                case ForwardReceiptPacket::NETWORK_ID:
+                    /** @var ForwardReceiptPacket $pk */
+                    $this->sendPayloadWithReceipt($streamIdentifier, $pk->payload, $pk->receiptId);
+                    break;
             }
         }
+    }
+
+    private function sendPayloadWithReceipt(int $streamIdentifier, string $payload, int $receiptId): void
+    {
+        if (($writer = $this->getStreamWriter($streamIdentifier)) === null) {
+            $this->shutdownStream($streamIdentifier, 'stream not found', false);
+            return;
+        }
+
+        $writer->writeWithPromise(Binary::writeInt(strlen($payload)) . $payload)->onResult(function() use ($streamIdentifier, $receiptId): void{
+            $pk = new AckPacket();
+            $pk->receiptId = $receiptId;
+
+            $this->sendToMainBuffer($streamIdentifier, $pk);
+        });
     }
 
     /**
@@ -277,40 +298,40 @@ class ProxyServer
     /**
      * Sends a data packet to the main thread.
      */
-    private function sendDataPacketToMain(int $socketIdentifier, string $payload): void
+    private function sendDataPacketToMain(int $streamIdentifier, string $payload): void
     {
         $pk = new ForwardPacket();
         $pk->payload = $payload;
 
-        $this->sendToMainBuffer($socketIdentifier, $pk);
+        $this->sendToMainBuffer($streamIdentifier, $pk);
     }
 
     /**
      * Returns the protocol ID for the given socket identifier.
      */
-    private function getProtocolId(int $socketIdentifier): int
+    private function getProtocolId(int $streamIdentifier): int
     {
-        return $this->protocolId[$socketIdentifier] ?? ProtocolInfo::CURRENT_PROTOCOL;
+        return $this->protocolId[$streamIdentifier] ?? ProtocolInfo::CURRENT_PROTOCOL;
     }
 
     /**
      * Sends a data packet to the client using a single packet in a batch.
      */
-    private function sendDataPacket(int $socketIdentifier, BedrockPacket $packet): void
+    private function sendDataPacket(int $streamIdentifier, BedrockPacket $packet): void
     {
-        $packetSerializer = PacketSerializer::encoder($protocolId = $this->getProtocolId($socketIdentifier));
+        $packetSerializer = PacketSerializer::encoder($protocolId = $this->getProtocolId($streamIdentifier));
         $packet->encode($packetSerializer);
 
         $stream = new BinaryStream();
         PacketBatch::encodeRaw($stream, [$packetSerializer->getBuffer()]);
         $payload = ($protocolId >= ProtocolInfo::PROTOCOL_1_20_60 ? chr(CompressionAlgorithm::ZLIB) : '') . ZlibCompressor::getInstance()->compress($stream->getBuffer());
 
-        $this->sendPayload($socketIdentifier, $payload);
+        $this->sendPayload($streamIdentifier, $payload);
     }
 
-    private function decodePacket(int $socketIdentifier, BedrockPacket $packet, string $buffer): void
+    private function decodePacket(int $streamIdentifier, BedrockPacket $packet, string $buffer): void
     {
-        $stream = PacketSerializer::decoder($this->protocolId[$socketIdentifier] ?? ProtocolInfo::CURRENT_PROTOCOL, $buffer, 0);
+        $stream = PacketSerializer::decoder($this->protocolId[$streamIdentifier] ?? ProtocolInfo::CURRENT_PROTOCOL, $buffer, 0);
         try {
             $packet->decode($stream);
         } catch (PacketDecodeException $e) {
@@ -327,15 +348,15 @@ class ProxyServer
      *
      * @return bool whether the packet was handled successfully
      */
-    private function handleDataPacket(int $socketIdentifier, BedrockPacket $packet, string $buffer): bool
+    private function handleDataPacket(int $streamIdentifier, BedrockPacket $packet, string $buffer): bool
     {
         if ($packet->pid() == NetworkStackLatencyPacket::NETWORK_ID) {
             /** @var NetworkStackLatencyPacket $packet USED FOR PING CALCULATIONS */
-            $this->decodePacket($socketIdentifier, $packet, $buffer);
+            $this->decodePacket($streamIdentifier, $packet, $buffer);
 
             if ($packet->timestamp === 0 && $packet->needResponse) {
                 try {
-                    $this->sendDataPacket($socketIdentifier, NetworkStackLatencyPacket::response(0));
+                    $this->sendDataPacket($streamIdentifier, NetworkStackLatencyPacket::response(0));
                 } catch (PacketHandlingException $e) {
                     // ignore, client probably disconnected
                 }
@@ -343,25 +364,25 @@ class ProxyServer
             }
         } else if ($packet->pid() === RequestNetworkSettingsPacket::NETWORK_ID) {
             /** @var RequestNetworkSettingsPacket $packet USED TO GET PROTOCOLID */
-            $this->decodePacket($socketIdentifier, $packet, $buffer);
+            $this->decodePacket($streamIdentifier, $packet, $buffer);
 
-            $this->protocolId[$socketIdentifier] = $packet->getProtocolVersion();
+            $this->protocolId[$streamIdentifier] = $packet->getProtocolVersion();
         }
 
         return false;
     }
 
     /**
-     * @param int $socketIdentifier
+     * @param int $streamIdentifier
      * @param string $payload
      * @return void
      * @see NetworkSession::handleEncoded($payload)
      *
      */
-    private function onFullDataReceive(int $socketIdentifier, string $payload): void
+    private function onFullDataReceive(int $streamIdentifier, string $payload): void
     {
         try {
-            $this->getBatchPacketLimiter($socketIdentifier)->decrement();
+            $this->getBatchPacketLimiter($streamIdentifier)->decrement();
 
             if (strlen($payload) < 1) {
                 throw new PacketHandlingException("No bytes in payload");
@@ -386,7 +407,7 @@ class ProxyServer
                 $stream = new BinaryStream($decompressed);
                 $count = 0;
                 foreach (PacketBatch::decodeRaw($stream) as $buffer) {
-                    $this->getGamePacketLimiter($socketIdentifier)->decrement();
+                    $this->getGamePacketLimiter($streamIdentifier)->decrement();
                     if (++$count > 100) {
                         throw new PacketHandlingException("Too many packets in batch");
                     }
@@ -396,8 +417,8 @@ class ProxyServer
                         throw new PacketHandlingException("Unknown packet received");
                     }
                     try {
-                        if (!$this->handleDataPacket($socketIdentifier, $packet, $buffer)) {
-                            $this->sendDataPacketToMain($socketIdentifier, $buffer);
+                        if (!$this->handleDataPacket($streamIdentifier, $packet, $buffer)) {
+                            $this->sendDataPacketToMain($streamIdentifier, $buffer);
                         }
                     } catch (PacketHandlingException $e) {
                         $this->logger->debug($packet->getName() . ": " . base64_encode($buffer));
@@ -410,22 +431,22 @@ class ProxyServer
             }
         } catch (PacketHandlingException $e) {
             $this->logger->logException($e);
-            $this->shutdownStream($socketIdentifier, "invalid packet", false);
+            $this->shutdownStream($streamIdentifier, "invalid packet", false);
         }
     }
 
-    private function onDataReceive(int $socketIdentifier, string $data): void
+    private function onDataReceive(int $streamIdentifier, string $data): void
     {
-        if (isset($this->socketBuffer[$socketIdentifier])) {
-            $this->socketBuffer[$socketIdentifier] .= $data;
+        if (isset($this->socketBuffer[$streamIdentifier])) {
+            $this->socketBuffer[$streamIdentifier] .= $data;
         } else {
-            $this->socketBuffer[$socketIdentifier] = $data;
+            $this->socketBuffer[$streamIdentifier] = $data;
         }
 
         while (true) {
-            $buffer = $this->socketBuffer[$socketIdentifier];
+            $buffer = $this->socketBuffer[$streamIdentifier];
             $length = strlen($buffer);
-            $lengthNeeded = $this->socketBufferLengthNeeded[$socketIdentifier] ?? null;
+            $lengthNeeded = $this->socketBufferLengthNeeded[$streamIdentifier] ?? null;
 
             if ($lengthNeeded === null) {
                 if ($length < 4) { // first 4 bytes are the length of the packet
@@ -434,18 +455,18 @@ class ProxyServer
                     try {
                         $packetLength = Binary::readInt(substr($buffer, 0, 4));
                     } catch (BinaryDataException $exception) {
-                        $this->shutdownStream($socketIdentifier, 'invalid packet', false);
+                        $this->shutdownStream($streamIdentifier, 'invalid packet', false);
                         return;
                     }
 
-                    $this->socketBufferLengthNeeded[$socketIdentifier] = $packetLength;
-                    $this->socketBuffer[$socketIdentifier] = substr($buffer, 4);
+                    $this->socketBufferLengthNeeded[$streamIdentifier] = $packetLength;
+                    $this->socketBuffer[$streamIdentifier] = substr($buffer, 4);
                 }
             } else if ($length >= $lengthNeeded) {
-                $this->onFullDataReceive($socketIdentifier, substr($buffer, 0, $lengthNeeded));
+                $this->onFullDataReceive($streamIdentifier, substr($buffer, 0, $lengthNeeded));
 
-                $this->socketBuffer[$socketIdentifier] = substr($buffer, $lengthNeeded);
-                unset($this->socketBufferLengthNeeded[$socketIdentifier]);
+                $this->socketBuffer[$streamIdentifier] = substr($buffer, $lengthNeeded);
+                unset($this->socketBufferLengthNeeded[$streamIdentifier]);
             } else {
                 return; // wait for more data
             }
