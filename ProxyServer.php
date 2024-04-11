@@ -115,7 +115,7 @@ class ProxyServer
                 $pk->port = $peerAddress->getPort();
                 $this->sendToMainBuffer($streamIdentifier, $pk);
 
-                $stream->setShutdownReadingCallback(function (bool $peerClosed) use ($streamIdentifier): void {
+                $stream->addShutdownReadingCallback(function (bool $peerClosed) use ($streamIdentifier): void {
                     if ($peerClosed) {
                         if (isset($this->streamWriters[$streamIdentifier])) { // check if the stream is still open
                             $this->shutdownStream($streamIdentifier, 'client disconnect', false);
@@ -148,6 +148,10 @@ class ProxyServer
         $serverConfig->enableBidirectionalStreams();
         $serverConfig->setInitialMaxData(10000000);
         $serverConfig->setMaxIdleTimeout(2000);
+        $serverConfig->setEnableActiveMigration(false);
+        $serverConfig->discoverPMTUD(true);
+        $serverConfig->setMaxRecvUdpPayloadSize(1350);
+        $serverConfig->setMaxSendUdpPayloadSize(1350);
 
         $serverSocket->registerSocket($notifySocket, function () use ($notifySocket): void {
             socket_read($notifySocket, 65535); //clean socket
