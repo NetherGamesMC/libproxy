@@ -5,37 +5,39 @@ declare(strict_types=1);
 
 namespace libproxy\protocol;
 
-
-use pocketmine\utils\BinaryDataException;
+use pmmp\encoding\ByteBufferReader;
+use pmmp\encoding\ByteBufferWriter;
+use pmmp\encoding\DataDecodeException;
+use pmmp\encoding\VarInt;
 
 abstract class ProxyPacket
 {
-    public const NETWORK_ID = 0;
+    public const int NETWORK_ID = 0;
 
     public function pid(): int
     {
         return $this::NETWORK_ID;
     }
 
-    final public function encode(ProxyPacketSerializer $out): void
+    final public function encode(ByteBufferWriter $out): void
     {
-        $out->putUnsignedVarInt(static::NETWORK_ID);
+        VarInt::writeUnsignedInt($out, $this::NETWORK_ID);
         $this->encodePayload($out);
     }
 
-    abstract public function encodePayload(ProxyPacketSerializer $out): void;
+    abstract public function encodePayload(ByteBufferWriter $out): void;
 
     /**
-     * @throws BinaryDataException
+     * @throws DataDecodeException
      */
-    final public function decode(ProxyPacketSerializer $in): void
+    final public function decode(ByteBufferReader $in): void
     {
-        $in->getUnsignedVarInt();
+        VarInt::readUnsignedInt($in);
         $this->decodePayload($in);
     }
 
     /**
-     * @throws BinaryDataException
+     * @throws DataDecodeException
      */
-    abstract public function decodePayload(ProxyPacketSerializer $in): void;
+    abstract public function decodePayload(ByteBufferReader $in): void;
 }

@@ -5,21 +5,23 @@ declare(strict_types=1);
 
 namespace libproxy\protocol;
 
+use pmmp\encoding\ByteBufferReader;
+use pmmp\encoding\ByteBufferWriter;
 
 class DisconnectPacket extends ProxyPacket
 {
-    public const NETWORK_ID = ProxyProtocolInfo::DISCONNECT_PACKET;
+    public const int NETWORK_ID = ProxyProtocolInfo::DISCONNECT_PACKET;
 
     /** @var string */
     public string $reason;
 
-    public function encodePayload(ProxyPacketSerializer $out): void
+    public function encodePayload(ByteBufferWriter $out): void
     {
-        $out->put($this->reason);
+        $out->writeByteArray($this->reason);
     }
 
-    public function decodePayload(ProxyPacketSerializer $in): void
+    public function decodePayload(ByteBufferReader $in): void
     {
-        $this->reason = $in->getRemaining();
+        $this->reason = $in->readByteArray($in->getUnreadLength());
     }
 }

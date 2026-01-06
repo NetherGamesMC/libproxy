@@ -12,13 +12,17 @@ use libproxy\protocol\ForwardReceiptPacket;
 use libproxy\protocol\LoginPacket;
 use libproxy\protocol\ProxyPacket;
 use libproxy\protocol\ProxyPacketPool;
-use libproxy\protocol\ProxyPacketSerializer;
 use NetherGames\Quiche\io\QueueWriter;
 use NetherGames\Quiche\QuicheConnection;
 use NetherGames\Quiche\socket\QuicheServerSocket;
 use NetherGames\Quiche\SocketAddress;
 use NetherGames\Quiche\stream\BiDirectionalQuicheStream;
 use NetherGames\Quiche\stream\QuicheStream;
+use pmmp\encoding\BE;
+use pmmp\encoding\ByteBufferReader;
+use pmmp\encoding\ByteBufferWriter;
+use pmmp\encoding\DataDecodeException;
+use pmmp\encoding\LE;
 use pmmp\thread\ThreadSafeArray;
 use pocketmine\network\mcpe\compression\DecompressionException;
 use pocketmine\network\mcpe\compression\ZlibCompressor;
@@ -31,7 +35,6 @@ use pocketmine\network\mcpe\protocol\PacketPool;
 use pocketmine\network\mcpe\protocol\ProtocolInfo;
 use pocketmine\network\mcpe\protocol\RequestNetworkSettingsPacket;
 use pocketmine\network\mcpe\protocol\serializer\PacketBatch;
-use pocketmine\network\mcpe\protocol\serializer\PacketSerializer;
 use pocketmine\network\mcpe\protocol\types\CompressionAlgorithm;
 use pocketmine\network\mcpe\raklib\PthreadsChannelReader;
 use pocketmine\network\mcpe\raklib\SnoozeAwarePthreadsChannelWriter;
@@ -39,9 +42,6 @@ use pocketmine\network\PacketHandlingException;
 use pocketmine\snooze\SleeperHandler;
 use pocketmine\snooze\SleeperHandlerEntry;
 use pocketmine\thread\log\AttachableThreadSafeLogger;
-use pocketmine\utils\Binary;
-use pocketmine\utils\BinaryDataException;
-use pocketmine\utils\BinaryStream;
 use Socket;
 use function array_keys;
 use function base64_encode;
@@ -56,6 +56,8 @@ use function zstd_uncompress;
 
 class ProxyServer
 {
+    private const INCOMING_PACKET_BATCH_HARD_LIMIT = 300;
+
     /** @var PthreadsChannelReader */
     private PthreadsChannelReader $mainToThreadReader;
     /** @var SnoozeAwarePthreadsChannelWriter */
@@ -221,12 +223,12 @@ class ProxyServer
 
     private function sendToMainBuffer(int $streamIdentifier, ProxyPacket $pk): void
     {
-        $serializer = new ProxyPacketSerializer();
-        $serializer->putLInt($streamIdentifier);
+        $serializer = new ByteBufferWriter();
+        LE::writeUnsignedInt($serializer, $streamIdentifier);
 
         $pk->encode($serializer);
 
-        $this->threadToMainWriter->write($serializer->getBuffer());
+        $this->threadToMainWriter->write($serializer->getData());
     }
 
     public function tickProcessor(): void
@@ -237,16 +239,18 @@ class ProxyServer
     private function pushSockets(): void
     {
         while (($payload = $this->mainToThreadReader->read()) !== null) {
-            $stream = new ProxyPacketSerializer($payload);
-            $streamIdentifier = $stream->getLInt();
+            $stream = new ByteBufferReader($payload);
+            $streamIdentifier = LE::readUnsignedInt($stream);
 
-            if (($pk = ProxyPacketPool::getInstance()->getPacket($payload, $stream->getOffset())) === null) {
+            $offset = $stream->getOffset();
+            if (($pk = ProxyPacketPool::getInstance()->getPacket($stream)) === null) {
                 throw new PacketHandlingException('Packet does not exist');
             }
+            $stream->setOffset($offset);
 
             try {
                 $pk->decode($stream);
-            } catch (BinaryDataException $e) {
+            } catch (DataDecodeException $e) {
                 $this->logger->debug('Closed stream with id(' . $streamIdentifier . ') because server sent invalid packet');
                 $this->shutdownStream($streamIdentifier, 'invalid packet', false);
                 return;
@@ -278,7 +282,7 @@ class ProxyServer
             return;
         }
 
-        $writer->writeWithPromise(Binary::writeInt(strlen($payload)) . $payload)->onResult(function() use ($streamIdentifier, $receiptId): void{
+        $writer->writeWithPromise(BE::packSignedInt(strlen($payload)) . $payload)->onResult(function () use ($streamIdentifier, $receiptId): void {
             $pk = new AckPacket();
             $pk->receiptId = $receiptId;
 
@@ -296,7 +300,7 @@ class ProxyServer
             return;
         }
 
-        $writer->write(Binary::writeInt(strlen($payload)) . $payload);
+        $writer->write(BE::packSignedInt(strlen($payload)) . $payload);
     }
 
     /**
@@ -323,26 +327,26 @@ class ProxyServer
      */
     private function sendDataPacket(int $streamIdentifier, BedrockPacket $packet): void
     {
-        $packetSerializer = PacketSerializer::encoder($protocolId = $this->getProtocolId($streamIdentifier));
-        $packet->encode($packetSerializer);
+        $packetSerializer = new ByteBufferWriter();
+        $packet->encode($packetSerializer, $protocolId = $this->getProtocolId($streamIdentifier));
 
-        $stream = new BinaryStream();
-        PacketBatch::encodeRaw($stream, [$packetSerializer->getBuffer()]);
-        $payload = ($protocolId >= ProtocolInfo::PROTOCOL_1_20_60 ? chr(CompressionAlgorithm::ZLIB) : '') . ZlibCompressor::getInstance()->compress($stream->getBuffer());
+        $stream = new ByteBufferWriter();
+        PacketBatch::encodeRaw($stream, [$packetSerializer->getData()]);
+        $payload = ($protocolId >= ProtocolInfo::PROTOCOL_1_20_60 ? chr(CompressionAlgorithm::ZLIB) : '') . ZlibCompressor::getInstance()->compress($stream->getData());
 
         $this->sendPayload($streamIdentifier, $payload);
     }
 
     private function decodePacket(int $streamIdentifier, BedrockPacket $packet, string $buffer): void
     {
-        $stream = PacketSerializer::decoder($this->protocolId[$streamIdentifier] ?? ProtocolInfo::CURRENT_PROTOCOL, $buffer, 0);
+        $stream = new ByteBufferReader($buffer);
         try {
-            $packet->decode($stream);
+            $packet->decode($stream, $this->protocolId[$streamIdentifier] ?? ProtocolInfo::CURRENT_PROTOCOL);
         } catch (PacketDecodeException $e) {
             throw PacketHandlingException::wrap($e);
         }
-        if (!$stream->feof()) {
-            $remains = substr($stream->getBuffer(), $stream->getOffset());
+        if ($stream->getUnreadLength() > 0) {
+            $remains = substr($stream->getData(), $stream->getOffset());
             $this->logger->debug("Still " . strlen($remains) . " bytes unread in " . $packet->getName() . ": " . bin2hex($remains));
         }
     }
@@ -407,14 +411,18 @@ class ProxyServer
                 throw PacketHandlingException::wrap($e, "Compressed packet batch decode error");
             }
 
+            $count = 0;
             try {
-                $stream = new BinaryStream($decompressed);
-                $count = 0;
+                $stream = new ByteBufferReader($decompressed);
                 foreach (PacketBatch::decodeRaw($stream) as $buffer) {
-                    $this->getGamePacketLimiter($streamIdentifier)->decrement();
-                    if (++$count > 100) {
-                        throw new PacketHandlingException("Too many packets in batch");
+                    if(++$count >= self::INCOMING_PACKET_BATCH_HARD_LIMIT){
+                        //this should be well more than enough; under normal conditions the game packet rate limiter
+                        //will kick in well before this. This is only here to make sure we can't get huge batches of
+                        //noisy packets to bog down the server, since those aren't counted by the regular limiter.
+                        throw new PacketHandlingException("Reached hard limit of " . self::INCOMING_PACKET_BATCH_HARD_LIMIT . " per batch packet");
                     }
+
+                    $this->getGamePacketLimiter($streamIdentifier)->decrement();
                     $packet = PacketPool::getInstance()->getPacket($buffer);
                     if ($packet === null) {
                         $this->logger->debug("Unknown packet: " . base64_encode($buffer));
@@ -429,7 +437,7 @@ class ProxyServer
                         throw PacketHandlingException::wrap($e, "Error processing " . $packet->getName());
                     }
                 }
-            } catch (PacketDecodeException|BinaryDataException $e) {
+            } catch (PacketDecodeException|DataDecodeException $e) {
                 $this->logger->logException($e);
                 throw PacketHandlingException::wrap($e, "Packet batch decode error");
             }
@@ -457,8 +465,8 @@ class ProxyServer
                     return; // wait for more data
                 } else {
                     try {
-                        $packetLength = Binary::readInt(substr($buffer, 0, 4));
-                    } catch (BinaryDataException $exception) {
+                        $packetLength = BE::unpackSignedInt(substr($buffer, 0, 4));
+                    } catch (DataDecodeException $exception) {
                         $this->shutdownStream($streamIdentifier, 'invalid packet', false);
                         return;
                     }

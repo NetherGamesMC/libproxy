@@ -5,7 +5,7 @@ on: push
 jobs:
   phpstan:
     name: PHPStan Analysis
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     if: "!contains(github.event.head_commit.message, '[ci skip]')"
 
     steps:
@@ -14,14 +14,14 @@ jobs:
       - name: Download PHP Release
         uses: dsaltares/fetch-gh-release-asset@1.1.2
         with:
-          file: PHP-8.3-Linux-x86_64-PM5.tar.gz
+          file: PHP-8.4-Linux-x86_64-PM5.tar.gz
           repo: NetherGamesMC/php-build-scripts
-          version: "tags/pm5-php-8.3-latest"
+          version: "tags/pm5-php-8.4-latest"
           token: ${{ secrets.GITHUB_TOKEN }}
       - name: Unpack PHP Release
-        run: tar -xzvf PHP-8.3-Linux-x86_64-PM5.tar.gz
-      - name: Install libFFI
-        run: sudo apt install libffi7
+        run: tar -xzvf PHP-8.4-Linux-x86_64-PM5.tar.gz
+      - name: Install libffi7
+        run: sudo apt update && sudo apt install -y --no-install-recommends libffi7
       - name: Download Composer
         run: curl -o composer.phar "https://getcomposer.org/composer-stable.phar"
       - name: Add Composer GitHub access token

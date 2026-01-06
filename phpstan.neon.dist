@@ -1,6 +1,7 @@
 parameters:
+    ignoreErrors:
+        - identifier: function.alreadyNarrowedType
     level: max
-    checkMissingIterableValueType: false
     paths:
         - .
     excludePaths:

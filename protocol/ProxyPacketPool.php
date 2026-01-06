@@ -6,8 +6,9 @@ declare(strict_types=1);
 namespace libproxy\protocol;
 
 
-use pocketmine\utils\Binary;
-use pocketmine\utils\BinaryDataException;
+use pmmp\encoding\ByteBufferReader;
+use pmmp\encoding\DataDecodeException;
+use pmmp\encoding\VarInt;
 use SplFixedArray;
 
 class ProxyPacketPool
@@ -42,11 +43,11 @@ class ProxyPacketPool
     }
 
     /**
-     * @throws BinaryDataException
+     * @throws DataDecodeException
      */
-    public function getPacket(string $buffer, int $offset): ?ProxyPacket
+    public function getPacket(ByteBufferReader $stream): ?ProxyPacket
     {
-        return $this->getPacketById(Binary::readUnsignedVarInt($buffer, $offset));
+        return $this->getPacketById(VarInt::readUnsignedInt($stream));
     }
 
     public function getPacketById(int $pid): ?ProxyPacket

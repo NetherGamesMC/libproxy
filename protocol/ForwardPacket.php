@@ -5,21 +5,23 @@ declare(strict_types=1);
 
 namespace libproxy\protocol;
 
+use pmmp\encoding\ByteBufferReader;
+use pmmp\encoding\ByteBufferWriter;
 
 class ForwardPacket extends ProxyPacket
 {
-    public const NETWORK_ID = ProxyProtocolInfo::FORWARD_PACKET;
+    public const int NETWORK_ID = ProxyProtocolInfo::FORWARD_PACKET;
 
     /** @var string */
     public string $payload;
 
-    public function encodePayload(ProxyPacketSerializer $out): void
+    public function encodePayload(ByteBufferWriter $out): void
     {
-        $out->put($this->payload);
+        $out->writeByteArray($this->payload);
     }
 
-    public function decodePayload(ProxyPacketSerializer $in): void
+    public function decodePayload(ByteBufferReader $in): void
     {
-        $this->payload = $in->getRemaining();
+        $this->payload = $in->readByteArray($in->getUnreadLength());
     }
 }

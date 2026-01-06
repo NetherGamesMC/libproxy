@@ -15,9 +15,13 @@ use libproxy\protocol\ForwardPacket;
 use libproxy\protocol\LoginPacket;
 use libproxy\protocol\ProxyPacket;
 use libproxy\protocol\ProxyPacketPool;
-use libproxy\protocol\ProxyPacketSerializer;
+use pmmp\encoding\ByteBufferReader;
+use pmmp\encoding\ByteBufferWriter;
+use pmmp\encoding\DataDecodeException;
+use pmmp\encoding\LE;
 use pmmp\thread\Thread as NativeThread;
 use pmmp\thread\ThreadSafeArray;
+use pocketmine\network\FilterNoisyPacketException;
 use pocketmine\network\mcpe\compression\ZlibCompressor;
 use pocketmine\network\mcpe\convert\TypeConverter;
 use pocketmine\network\mcpe\EntityEventBroadcaster;
@@ -33,8 +37,6 @@ use pocketmine\scheduler\ClosureTask;
 use pocketmine\Server;
 use pocketmine\snooze\SleeperHandlerEntry;
 use pocketmine\thread\ThreadCrashException;
-use pocketmine\utils\Binary;
-use pocketmine\utils\BinaryDataException;
 use Socket;
 use ThreadedArray;
 use WeakMap;
@@ -97,11 +99,9 @@ final class ProxyNetworkInterface implements NetworkInterface
             }
         }
 
-        /** @phpstan-ignore-next-line */
         self::$latencyMap = new WeakMap();
 
-        /** @var Socket $threadNotifier */
-        /** @var Socket $threadNotification */
+        /** @var list{Socket, Socket} $ipc */
         [$threadNotifier, $threadNotification] = $ipc;
         $this->threadNotifier = $threadNotifier;
 
@@ -163,27 +163,29 @@ final class ProxyNetworkInterface implements NetworkInterface
 
     /**
      * @throws PacketHandlingException
+     * @throws DataDecodeException
      */
     private function onPacketReceive(string $buffer): void
     {
-        $stream = new ProxyPacketSerializer($buffer);
-        $socketId = $stream->getLInt();
+        $stream = new ByteBufferReader($buffer);
+        $socketId = LE::readUnsignedInt($stream);
 
-        if (($pk = ProxyPacketPool::getInstance()->getPacket($buffer, $stream->getOffset())) === null) {
-            $offset = 0;
-            throw new PacketHandlingException('Proxy packet with id (' . Binary::readUnsignedVarInt($buffer, $offset) . ') does not exist');
+        $offset = $stream->getOffset();
+        if (($pk = ProxyPacketPool::getInstance()->getPacket($stream)) === null) {
+            throw new PacketHandlingException('Unknown ProxyPacket received from Proxy Thread');
         }
+        $stream->setOffset($offset);
 
         try {
             $pk->decode($stream);
-        } catch (BinaryDataException $e) {
+        } catch (DataDecodeException $e) {
             $this->server->getLogger()->debug('Closed socket with id(' . $socketId . ') because packet was invalid.');
             $this->close($socketId, 'Invalid Packet');
             return;
         }
 
-        if (!$stream->feof()) {
-            $remains = substr($stream->getBuffer(), $stream->getOffset());
+        if ($stream->getUnreadLength() > 0) {
+            $remains = substr($stream->getData(), $stream->getOffset());
             $this->server->getLogger()->debug('Still ' . strlen($remains) . ' bytes unread in ' . $pk->pid() . ': ' . bin2hex($remains));
         }
 
@@ -211,6 +213,10 @@ final class ProxyNetworkInterface implements NetworkInterface
                         break; // might be data arriving from the client after the server has closed the connection
                     }
 
+                    if ((fn() => $this->checkRepeatedPacketFilter($pk->payload))->call($session)) {
+                        break;
+                    }
+
                     $packet = PacketPool::getInstance()->getPacket($pk->payload);
                     if ($packet === null) {
                         $session->getLogger()->debug("Unknown packet: " . base64_encode($pk->payload));
@@ -221,6 +227,8 @@ final class ProxyNetworkInterface implements NetworkInterface
                     } catch (PacketHandlingException $e) {
                         $session->getLogger()->debug($packet->getName() . ": " . base64_encode($pk->payload));
                         throw PacketHandlingException::wrap($e, "Error processing " . $packet->getName());
+                    } catch (FilterNoisyPacketException) {
+                        (fn() => $this->noisyPacketBuffer = $pk->payload)->call($session);
                     }
                     $this->receiveBytes += strlen($pk->payload);
                     break;
@@ -233,7 +241,7 @@ final class ProxyNetworkInterface implements NetworkInterface
                     $session->handleAckReceipt($pk->receiptId);
                     break;
             }
-        } catch (PacketHandlingException|BinaryDataException $exception) {
+        } catch (PacketHandlingException|DataDecodeException $exception) {
             $this->close($socketId, 'Error handling a Packet (Server)');
 
             $this->server->getLogger()->logException($exception);
@@ -285,13 +293,13 @@ final class ProxyNetworkInterface implements NetworkInterface
 
     public function putPacket(int $socketId, ProxyPacket $pk): void
     {
-        $serializer = new ProxyPacketSerializer();
-        $serializer->putLInt($socketId);
+        $serializer = new ByteBufferWriter();
+        LE::writeUnsignedInt($serializer, $socketId);
 
         $pk->encode($serializer);
 
-        $this->mainToThreadWriter->write($serializer->getBuffer());
-        $this->sendBytes += strlen($serializer->getBuffer());
+        $this->mainToThreadWriter->write($serializer->getData());
+        $this->sendBytes += strlen($serializer->getData());
 
         try {
             socket_write($this->threadNotifier, "\x00"); // wakes up the socket_select function
