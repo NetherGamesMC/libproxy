@@ -130,7 +130,7 @@ final class ProxyNetworkInterface implements NetworkInterface
         $this->threadToMainReader = new PthreadsChannelReader($threadToMainBuffer);
 
         $this->packetBroadcaster = PMUtils::getPacketBroadcaster($server);
-        $this->entityEventBroadcaster = PMUtils::getEntityEventBroadcaster($server);
+        $this->entityEventBroadcaster = PMUtils::getEntityEventBroadcaster($server, $this->packetBroadcaster);
 
         PacketPool::getInstance()->registerPacket(new TickSyncPacket());
 
