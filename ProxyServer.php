@@ -233,7 +233,7 @@ class ProxyServer
 
     public function tickProcessor(): void
     {
-        $this->serverSocket->selectSockets(50);
+        $this->serverSocket->selectSockets();
     }
 
     private function pushSockets(): void

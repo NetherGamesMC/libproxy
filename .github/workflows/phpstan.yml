@@ -5,7 +5,7 @@ on: push
 jobs:
   phpstan:
     name: PHPStan Analysis
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     if: "!contains(github.event.head_commit.message, '[ci skip]')"
 
     steps:
@@ -20,8 +20,8 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
       - name: Unpack PHP Release
         run: tar -xzvf PHP-8.4-Linux-x86_64-PM5.tar.gz
-      - name: Install libffi7
-        run: sudo apt update && sudo apt install -y --no-install-recommends libffi7
+      - name: Install libffi8
+        run: sudo apt update && sudo apt install -y --no-install-recommends libffi8
       - name: Download Composer
         run: curl -o composer.phar "https://getcomposer.org/composer-stable.phar"
       - name: Add Composer GitHub access token

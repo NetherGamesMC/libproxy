@@ -2,7 +2,6 @@
 
 namespace libproxy;
 
-use Exception;
 use pocketmine\network\mcpe\convert\TypeConverter;
 use pocketmine\network\mcpe\EntityEventBroadcaster;
 use pocketmine\network\mcpe\PacketBroadcaster;
