@@ -12,7 +12,7 @@
         "nethergamesmc/quiche": "dev-master"
     },
     "require-dev": {
-        "phpstan/phpstan": "2.1.29",
+        "phpstan/phpstan": "2.3.5",
         "nethergamesmc/pocketmine-mp": "dev-stable"
     },
     "repositories": [
